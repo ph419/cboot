@@ -1,0 +1,97 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Agent|TeamCreate|TaskCreate|TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ccsp --preset MBTC --theme powerline",
+            "async": true,
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  },
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
+    "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-4.5-air",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5",
+    "ENABLE_TOOL_SEARCH": "0",
+    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(ls *)",
+      "Bash(ls)",
+      "Bash(cat *)",
+      "Bash(grep *)",
+      "Bash(find *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(rm *)",
+      "Bash(touch *)",
+      "Bash(echo *)",
+      "Bash(pwd)",
+      "Bash(which *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git pull)",
+      "Bash(git push)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git remote *)",
+      "Bash(mvn *)",
+      "Bash(npm *)",
+      "Bash(node *)",
+      "Bash(curl *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(sort *)",
+      "Bash(uniq *)",
+      "Bash(sed *)",
+      "Bash(awk *)",
+      "Bash(xargs *)",
+      "Bash(chmod *)",
+      "Bash(java -version)",
+      "Bash(java *)",
+      "Bash(* --help)",
+      "Bash(* --version)",
+      "Bash(* -h)",
+      "Bash(* -v)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf /)",
+      "Bash(dd if=*)",
+      "Bash(> /dev/sda*)",
+      "Bash(mkfs *)"
+    ]
+  },
+  "enabledPlugins": {
+    "document-skills@anthropic-agent-skills": true,
+    "example-skills@anthropic-agent-skills": true
+  },
+  "language": "中文",
+  "autoUpdatesChannel": "latest",
+  "skipDangerousModePermissionPrompt": true,
+  "autoDreamEnabled": true,
+  "model": "glm-5",
+  "statusLine": {
+    "type": "command",
+    "command": "ccsp --preset MBTC --theme powerline"
+  }
+}

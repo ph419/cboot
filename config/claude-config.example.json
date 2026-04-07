@@ -1,0 +1,40 @@
+{
+    "models": [
+        {
+            "id": "glm-5.1",
+            "name": "GLM-5.1",
+            "configFile": "settings-glm-5.1.json",
+            "usageCount": 0
+        },
+        {
+            "id": "glm5",
+            "name": "GLM-5",
+            "configFile": "settings-glm.json",
+            "usageCount": 0
+        },
+        {
+            "id": "glm-5-turbo",
+            "name": "GLM-5-turbo",
+            "configFile": "settings-glm-5-turbo.json",
+            "usageCount": 0
+        },
+        {
+            "id": "glm-5v-turbo",
+            "name": "GLM-5v-turbo",
+            "configFile": "settings-glm-5v-turbo.json",
+            "usageCount": 0
+        }
+    ],
+    "defaultModel": "glm-5.1",
+    "defaultPermission": "yes",
+    "projects": [
+        {
+            "path": "C:\\Users\\YourName\\projects\\my-project",
+            "usageCount": 0
+        },
+        {
+            "path": "C:\\Users\\YourName\\projects\\another-project",
+            "usageCount": 0
+        }
+    ]
+}
