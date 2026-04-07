@@ -1,5 +1,7 @@
 # cboot
 
+支持切换模型、选择工作空间、配置跳过权限的 Claude Code CLI 启动器。
+
 一个 PowerShell 版 Claude Code 交互式启动器，支持多模型切换、项目管理、权限控制和智能排序。
 
 ## 功能特性
