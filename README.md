@@ -26,16 +26,11 @@
 git clone https://github.com/ph419/cboot.git
 cd cboot
 
-# 运行安装脚本（将示例配置复制到 ~/.claude/）
-.\install.ps1
+# 启动 cboot，首次运行会自动引导初始化配置
+.\cboot.ps1
 ```
 
-### 配置
-
-安装后需要编辑配置文件：
-
-1. 编辑 `~/.claude/claude-config.json` — 设置模型和项目路径
-2. 编辑 `~/.claude/settings-*.json` — 替换 `YOUR_API_KEY_HERE` 为你的 API Key
+首次运行时，cboot 会检测配置是否缺失，并引导你完成初始化或逐项修复。
 
 ### 使用
 
@@ -138,7 +133,6 @@ cboot/
 │       ├── settings-glm.example.json
 │       ├── settings-glm-5-turbo.example.json
 │       └── settings-glm-5v-turbo.example.json
-├── install.ps1                    # 安装脚本
 ├── README.md
 └── LICENSE
 ```
