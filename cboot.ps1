@@ -11,6 +11,65 @@ $CONFIG_DIR = $CUSTOM_CONFIG_DIR
 
 $configPath = Join-Path $CONFIG_DIR "claude-config.json"
 
+# 格式化 JSON：2 空格缩进，冒号后单空格
+function Format-Json {
+    [CmdletBinding()]
+    param([Parameter(ValueFromPipeline=$true)][string]$Json)
+    process {
+        $Json = $Json -replace ':  +', ': '
+        $indent = 0
+        $result = @()
+        foreach ($line in ($Json -split "`r?`n")) {
+            $t = $line.Trim()
+            if ($t.Length -eq 0) { continue }
+            if ($t -match '^[}\]]') { $indent = [Math]::Max(0, $indent - 1) }
+            $result += ('  ' * $indent) + $t
+            if ($t -match '[{\[]\s*$' -and $t -notmatch '[}\]]') { $indent++ }
+        }
+        ($result -join "`r`n") + "`r`n"
+    }
+}
+
+# 读取键盘输入的函数（支持循环选择）
+function Read-KeyInput {
+    param(
+        [int]$selectedIndex,
+        [int]$maxIndex
+    )
+
+    while ($true) {
+        $key = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
+        switch ($key.VirtualKeyCode) {
+            38 { # 向上箭头
+                if ($selectedIndex -gt 0) {
+                    $selectedIndex--
+                } else {
+                    $selectedIndex = $maxIndex
+                }
+                return $selectedIndex, $false
+            }
+            40 { # 向下箭头
+                if ($selectedIndex -lt $maxIndex) {
+                    $selectedIndex++
+                } else {
+                    $selectedIndex = 0
+                }
+                return $selectedIndex, $false
+            }
+            13 { # 回车键
+                return $selectedIndex, $true
+            }
+            27 { # ESC键
+                return -1, $true
+            }
+            72 { # H键
+                return -2, $true
+            }
+        }
+    }
+}
+
 # 读取配置
 function Get-Config {
     try {
@@ -25,89 +84,194 @@ function Get-Config {
 function Save-Config {
     param($config)
     try {
-        $configJson = $config | ConvertTo-Json -Depth 10
+        $configJson = $config | ConvertTo-Json -Depth 10 | Format-Json
         Set-Content -Path $configPath -Value $configJson -Encoding UTF8
     } catch {
         # 静默失败
     }
 }
 
+# 删除配置文件及关联的 settings 文件
+function Remove-ConfigAndSettings {
+    param([string]$configFilePath)
+    $cfg = $null
+    try {
+        $cfg = Get-Content $configFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {}
+    if ($cfg -and $cfg.models) {
+        foreach ($m in $cfg.models) {
+            if ($m.configFile) {
+                $settingsPath = Join-Path $CONFIG_DIR $m.configFile
+                Remove-Item $settingsPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    Remove-Item $configFilePath -Force -ErrorAction SilentlyContinue
+}
+
+# 自定义输入函数：支持空行取消（返回 $null 表示取消）
+function Read-HostWithCancel {
+    param(
+        [string]$prompt,
+        [string]$defaultValue = $null
+    )
+
+    Write-Host $prompt -NoNewline -ForegroundColor Yellow
+    if ($defaultValue) {
+        Write-Host " [默认: $defaultValue]" -NoNewline -ForegroundColor DarkGray
+    }
+    Write-Host ": "
+
+    $userInput = Read-Host
+
+    # 空行处理
+    if ([string]::IsNullOrWhiteSpace($userInput)) {
+        if ($defaultValue) {
+            return $defaultValue
+        }
+        # 无默认值时，空行表示取消
+        return $null
+    }
+
+    return $userInput
+}
+
+# 确认取消操作
+function Confirm-Cancel {
+    $selectedIndex = 0
+    $selected = $false
+
+    while (-not $selected) {
+        Clear-Host
+        Write-Host "确认取消?" -ForegroundColor Yellow
+        Write-Host ""
+        if ($selectedIndex -eq 0) {
+            Write-Host "  是，取消操作" -ForegroundColor Green -BackgroundColor Black
+            Write-Host "  否，继续输入" -ForegroundColor White
+        } else {
+            Write-Host "  是，取消操作" -ForegroundColor Red
+            Write-Host "  否，继续输入" -ForegroundColor Green -BackgroundColor Black
+        }
+        Write-Host ""
+        Write-Host "使用方向键导航，回车选择" -ForegroundColor Gray
+
+        $selectedIndex, $selected = Read-KeyInput -selectedIndex $selectedIndex -maxIndex 1
+        if ($selected -and $selectedIndex -eq -1) { return $false }
+    }
+
+    return ($selectedIndex -eq 0)
+}
+
 # 生成 settings 模板文件
 function New-SettingsTemplate {
     param(
         [string]$modelId,
-        [string]$configFile
+        [string]$configFile,
+        [string]$authToken,
+        [string]$baseUrl,
+        [string]$opusModel,
+        [string]$sonnetModel,
+        [string]$haikuModel
     )
 
     $settingsPath = Join-Path $CONFIG_DIR $configFile
 
-    # 构建模板内容
-    $template = @{
-        hooks = @{
-            PostToolUse = @(
-                @{
-                    matcher = "Agent|TeamCreate|TaskCreate|TaskUpdate"
-                    hooks = @(
-                        @{
-                            type = "command"
-                            command = "ccsp --preset MBTC --theme powerline"
-                            async = $true
-                            timeout = 5000
-                        }
-                    )
-                }
-            )
-        }
-        env = @{
-            ANTHROPIC_AUTH_TOKEN = "YOUR_API_KEY_HERE"
-            ANTHROPIC_BASE_URL = "https://open.bigmodel.cn/api/anthropic"
-            API_TIMEOUT_MS = "3000000"
-            CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
-            CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
-            CLAUDE_CODE_ATTRIBUTION_HEADER = "0"
-            ANTHROPIC_DEFAULT_HAIKU_MODEL = $modelId
-            ANTHROPIC_DEFAULT_SONNET_MODEL = $modelId
-            ANTHROPIC_DEFAULT_OPUS_MODEL = $modelId
-            ENABLE_TOOL_SEARCH = "0"
-            CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1"
-        }
-        permissions = @{
-            allow = @(
-                "Bash(ls *)", "Bash(ls)", "Bash(cat *)", "Bash(grep *)",
-                "Bash(find *)", "Bash(mkdir *)", "Bash(cp *)", "Bash(mv *)",
-                "Bash(rm *)", "Bash(touch *)", "Bash(echo *)", "Bash(pwd)",
-                "Bash(which *)", "Bash(git status)", "Bash(git status *)",
-                "Bash(git add *)", "Bash(git commit *)", "Bash(git pull)",
-                "Bash(git push)", "Bash(git branch *)", "Bash(git checkout *)",
-                "Bash(git log *)", "Bash(git diff *)", "Bash(git remote *)",
-                "Bash(mvn *)", "Bash(npm *)", "Bash(node *)", "Bash(curl *)",
-                "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(sort *)",
-                "Bash(uniq *)", "Bash(sed *)", "Bash(awk *)", "Bash(xargs *)",
-                "Bash(chmod *)", "Bash(java -version)", "Bash(java *)",
-                "Bash(* --help)", "Bash(* --version)", "Bash(* -h)", "Bash(* -v)"
-            )
-            deny = @(
-                "Bash(rm -rf /*)", "Bash(rm -rf /)", "Bash(dd if=*)",
-                "Bash(> /dev/sda*)", "Bash(mkfs *)"
-            )
-        }
-        enabledPlugins = @{
-            "document-skills@anthropic-agent-skills" = $true
-            "example-skills@anthropic-agent-skills" = $true
-        }
-        language = "中文"
-        autoUpdatesChannel = "latest"
-        skipDangerousModePermissionPrompt = $true
-        autoDreamEnabled = $true
-        model = $modelId
-        statusLine = @{
-            type = "command"
-            command = "ccsp --preset MBTC --theme powerline"
+    # 1. 查找已有 settings 文件作为模板
+    $templatePath = $null
+    $templateFiles = Get-ChildItem -Path $CONFIG_DIR -Filter "settings-*.json" -ErrorAction SilentlyContinue |
+                        Where-Object { $_.Name -ne $configFile }
+
+    if ($templateFiles) {
+        $templatePath = $templateFiles[0].FullName
+    }
+
+    # 2. 读取模板或使用硬编码模板
+    if ($templatePath -and (Test-Path $templatePath)) {
+        try {
+            $templateContent = Get-Content $templatePath -Raw -Encoding UTF8
+            $template = $templateContent | ConvertFrom-Json
+        } catch {
+            # 模板读取失败，fallback 到硬编码
+            $template = $null
         }
     }
 
+    # 3. 无模板时 fallback 到硬编码模板
+    if (-not $template) {
+        $template = @{
+            hooks = @{
+                PostToolUse = @(
+                    @{
+                        matcher = "Agent|TeamCreate|TaskCreate|TaskUpdate"
+                        hooks = @(
+                            @{
+                                type = "command"
+                                command = "ccsp --preset MBTC --theme powerline"
+                                async = $true
+                                timeout = 5000
+                            }
+                        )
+                    }
+                )
+            }
+            env = @{
+                API_TIMEOUT_MS = "3000000"
+                CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
+                CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
+                CLAUDE_CODE_ATTRIBUTION_HEADER = "0"
+                ENABLE_TOOL_SEARCH = "0"
+                CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1"
+            }
+            permissions = @{
+                allow = @(
+                    "Bash(ls *)", "Bash(ls)", "Bash(cat *)", "Bash(grep *)",
+                    "Bash(find *)", "Bash(mkdir *)", "Bash(cp *)", "Bash(mv *)",
+                    "Bash(rm *)", "Bash(touch *)", "Bash(echo *)", "Bash(pwd)",
+                    "Bash(which *)", "Bash(git status)", "Bash(git status *)",
+                    "Bash(git add *)", "Bash(git commit *)", "Bash(git pull)",
+                    "Bash(git push)", "Bash(git branch *)", "Bash(git checkout *)",
+                    "Bash(git log *)", "Bash(git diff *)", "Bash(git remote *)",
+                    "Bash(mvn *)", "Bash(npm *)", "Bash(node *)", "Bash(curl *)",
+                    "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(sort *)",
+                    "Bash(uniq *)", "Bash(sed *)", "Bash(awk *)", "Bash(xargs *)",
+                    "Bash(chmod *)", "Bash(java -version)", "Bash(java *)",
+                    "Bash(* --help)", "Bash(* --version)", "Bash(* -h)", "Bash(* -v)"
+                )
+                deny = @(
+                    "Bash(rm -rf /*)", "Bash(rm -rf /)", "Bash(dd if=*)",
+                    "Bash(> /dev/sda*)", "Bash(mkfs *)"
+                )
+            }
+            enabledPlugins = @{
+                "document-skills@anthropic-agent-skills" = $true
+                "example-skills@anthropic-agent-skills" = $true
+            }
+            language = "中文"
+            autoUpdatesChannel = "latest"
+            skipDangerousModePermissionPrompt = $true
+            autoDreamEnabled = $true
+            statusLine = @{
+                type = "command"
+                command = "ccsp --preset MBTC --theme powerline"
+            }
+        }
+    }
+
+    # 4. 替换关键 env 字段
+    if (-not $template.env) {
+        $template | Add-Member -MemberType NoteProperty -Name "env" -Value @{} -Force
+    }
+
+    $template.env.ANTHROPIC_AUTH_TOKEN = $authToken
+    $template.env.ANTHROPIC_BASE_URL = $baseUrl
+    $template.env.ANTHROPIC_DEFAULT_OPUS_MODEL = $opusModel
+    $template.env.ANTHROPIC_DEFAULT_SONNET_MODEL = $sonnetModel
+    $template.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $haikuModel
+    $template.model = $modelId
+
+    # 5. 写入文件
     try {
-        $templateJson = $template | ConvertTo-Json -Depth 10
+        $templateJson = $template | ConvertTo-Json -Depth 10 | Format-Json
         Set-Content -Path $settingsPath -Value $templateJson -Encoding UTF8
         return $true
     } catch {
@@ -117,29 +281,37 @@ function New-SettingsTemplate {
 
 # 初始化配置文件（交互式引导）
 function Initialize-Config {
+    while ($true) {
     Clear-Host
     Write-Host "=== 欢迎使用 cboot ===" -ForegroundColor Green
     Write-Host ""
     Write-Host "未找到配置文件，即将引导您完成初始配置。" -ForegroundColor Yellow
+    Write-Host "提示: 在输入步骤按回车（空行）可取消，项目路径步骤空行跳过" -ForegroundColor DarkGray
     Write-Host ""
 
-    # 步骤 1/3: 配置模型
-    Write-Host "步骤 1/3: 配置模型" -ForegroundColor Cyan
+    # 步骤 1/5: 配置模型基础信息
+    Write-Host "步骤 1/5: 配置模型基础信息" -ForegroundColor Cyan
     Write-Host ""
 
-    $modelId = ""
-    while ([string]::IsNullOrWhiteSpace($modelId)) {
-        $modelId = Read-Host "请输入模型 ID（如 glm-5.1）"
-        if ([string]::IsNullOrWhiteSpace($modelId)) {
-            Write-Host "模型 ID 不能为空!" -ForegroundColor Red
+    $modelId = Read-HostWithCancel "请输入模型 ID（如 glm-5.1）"
+    if ([string]::IsNullOrWhiteSpace($modelId)) {
+        if (Confirm-Cancel) { return }
+        while ([string]::IsNullOrWhiteSpace($modelId)) {
+            $modelId = Read-Host "请输入模型 ID（如 glm-5.1）"
+            if ([string]::IsNullOrWhiteSpace($modelId)) {
+                Write-Host "模型 ID 不能为空!" -ForegroundColor Red
+            }
         }
     }
 
-    $modelName = ""
-    while ([string]::IsNullOrWhiteSpace($modelName)) {
-        $modelName = Read-Host "请输入模型显示名称（如 GLM-5.1）"
-        if ([string]::IsNullOrWhiteSpace($modelName)) {
-            Write-Host "模型显示名称不能为空!" -ForegroundColor Red
+    $modelName = Read-HostWithCancel "请输入模型显示名称（如 GLM-5.1）"
+    if ([string]::IsNullOrWhiteSpace($modelName)) {
+        if (Confirm-Cancel) { return }
+        while ([string]::IsNullOrWhiteSpace($modelName)) {
+            $modelName = Read-Host "请输入模型显示名称（如 GLM-5.1）"
+            if ([string]::IsNullOrWhiteSpace($modelName)) {
+                Write-Host "模型显示名称不能为空!" -ForegroundColor Red
+            }
         }
     }
 
@@ -147,8 +319,38 @@ function Initialize-Config {
     Write-Host "配置文件名: $configFile" -ForegroundColor Gray
     Write-Host ""
 
-    # 步骤 2/3: 默认权限
-    Write-Host "步骤 2/3: 默认权限" -ForegroundColor Cyan
+    # 步骤 2/5: 配置 API 参数
+    Write-Host "步骤 2/5: 配置 API 参数" -ForegroundColor Cyan
+    Write-Host ""
+
+    $authToken = Read-HostWithCancel "请输入 ANTHROPIC_AUTH_TOKEN（API 密钥）"
+    if ([string]::IsNullOrWhiteSpace($authToken)) {
+        if (Confirm-Cancel) { return }
+        while ([string]::IsNullOrWhiteSpace($authToken)) {
+            $authToken = Read-Host "请输入 ANTHROPIC_AUTH_TOKEN（API 密钥）"
+            if ([string]::IsNullOrWhiteSpace($authToken)) {
+                Write-Host "API 密钥不能为空!" -ForegroundColor Red
+            }
+        }
+    }
+
+    $defaultBaseUrl = "https://open.bigmodel.cn/api/anthropic"
+    $baseUrl = Read-HostWithCancel "请输入 ANTHROPIC_BASE_URL" -defaultValue $defaultBaseUrl
+    if ([string]::IsNullOrWhiteSpace($baseUrl)) { $baseUrl = $defaultBaseUrl }
+
+    $opusModel = Read-HostWithCancel "请输入 ANTHROPIC_DEFAULT_OPUS_MODEL" -defaultValue $modelId
+    if ([string]::IsNullOrWhiteSpace($opusModel)) { $opusModel = $modelId }
+
+    $sonnetModel = Read-HostWithCancel "请输入 ANTHROPIC_DEFAULT_SONNET_MODEL" -defaultValue $modelId
+    if ([string]::IsNullOrWhiteSpace($sonnetModel)) { $sonnetModel = $modelId }
+
+    $haikuModel = Read-HostWithCancel "请输入 ANTHROPIC_DEFAULT_HAIKU_MODEL" -defaultValue $modelId
+    if ([string]::IsNullOrWhiteSpace($haikuModel)) { $haikuModel = $modelId }
+
+    Write-Host ""
+
+    # 步骤 3/5: 默认权限
+    Write-Host "步骤 3/5: 默认权限" -ForegroundColor Cyan
     Write-Host ""
 
     $defaultPermission = ""
@@ -164,12 +366,50 @@ function Initialize-Config {
     }
     Write-Host ""
 
-    # 步骤 3/3: 项目目录
-    Write-Host "步骤 3/3: 项目目录" -ForegroundColor Cyan
+    # 步骤 4/5: 项目目录
+    Write-Host "步骤 4/5: 项目目录" -ForegroundColor Cyan
     Write-Host ""
 
-    $projectPath = Read-Host "请输入项目目录路径（留空跳过）"
+    $projectPath = Read-HostWithCancel "请输入项目目录路径（留空跳过）"
     Write-Host ""
+
+    # 确认配置信息
+    $confirmIndex = 0
+    $confirmSelected = $false
+
+    while (-not $confirmSelected) {
+        Clear-Host
+        Write-Host "=== 请确认配置信息 ===" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "  模型 ID:      $modelId" -ForegroundColor White
+        Write-Host "  模型名称:     $modelName" -ForegroundColor White
+        Write-Host "  配置文件:     $configFile" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  API 密钥:     $($authToken.Substring(0, [Math]::Min(8, $authToken.Length)))..." -ForegroundColor White
+        Write-Host "  Base URL:     $baseUrl" -ForegroundColor White
+        Write-Host "  Opus 模型:    $opusModel" -ForegroundColor White
+        Write-Host "  Sonnet 模型:  $sonnetModel" -ForegroundColor White
+        Write-Host "  Haiku 模型:   $haikuModel" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  默认权限:     $(if ($defaultPermission -eq 'yes') { '允许所有操作' } else { '需要确认' })" -ForegroundColor White
+        Write-Host "  项目目录:     $(if ([string]::IsNullOrWhiteSpace($projectPath)) { '（未设置）' } else { $projectPath })" -ForegroundColor White
+        Write-Host ""
+        if ($confirmIndex -eq 0) {
+            Write-Host "  确认并保存" -ForegroundColor Green -BackgroundColor Black
+            Write-Host "  重新输入" -ForegroundColor White
+        } else {
+            Write-Host "  确认并保存" -ForegroundColor Yellow
+            Write-Host "  重新输入" -ForegroundColor Green -BackgroundColor Black
+        }
+        Write-Host ""
+        Write-Host "使用方向键选择，回车确认" -ForegroundColor Gray
+
+        $confirmIndex, $confirmSelected = Read-KeyInput -selectedIndex $confirmIndex -maxIndex 1
+        if ($confirmSelected -and $confirmIndex -eq -1) { $confirmIndex = 1; $confirmSelected = $true }
+    }
+
+    if ($confirmIndex -eq 0) { break }
+    } # end while
 
     # 创建配置对象
     $newConfig = @{
@@ -198,9 +438,13 @@ function Initialize-Config {
         }
     }
 
+    # 步骤 5/5: 保存配置并生成模板
+    Write-Host "步骤 5/5: 保存配置" -ForegroundColor Cyan
+    Write-Host ""
+
     # 保存配置文件
     try {
-        $configJson = $newConfig | ConvertTo-Json -Depth 10
+        $configJson = $newConfig | ConvertTo-Json -Depth 10 | Format-Json
         Set-Content -Path $configPath -Value $configJson -Encoding UTF8
     } catch {
         Clear-Host
@@ -214,124 +458,291 @@ function Initialize-Config {
     }
 
     # 生成 settings 模板
-    $templateCreated = New-SettingsTemplate -modelId $modelId -configFile $configFile
+    $templateCreated = New-SettingsTemplate -modelId $modelId -configFile $configFile `
+                                             -authToken $authToken -baseUrl $baseUrl `
+                                             -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel
 
     # 显示完成信息
     Clear-Host
     Write-Host "✅ 配置文件已生成！" -ForegroundColor Green
     Write-Host ""
     if ($templateCreated) {
-        Write-Host "⚠️  请编辑 $configFile 填入 API 密钥。" -ForegroundColor Yellow
-        Write-Host "   配置文件位置: $CONFIG_DIR\$configFile" -ForegroundColor Gray
+        Write-Host "已生成 $configFile 模板，API 配置已填入。" -ForegroundColor Green
+        Write-Host "配置文件位置: $CONFIG_DIR\$configFile" -ForegroundColor Gray
     } else {
-        Write-Host "⚠️  settings 模板生成失败，请手动创建" -ForegroundColor Yellow
+        Write-Host "settings 模板生成失败，请手动创建" -ForegroundColor Yellow
     }
     Write-Host ""
     Write-Host "按任意键继续..." -ForegroundColor Yellow
     $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
 
-# 检查配置文件是否存在
-if (-not (Test-Path $configPath)) {
-    Initialize-Config
-}
+# 配置加载与验证循环（缺失字段可逐项修复）
+while ($true) {
+    if (-not (Test-Path $configPath)) {
+        Initialize-Config
+    }
 
-$config = Get-Config
+    $config = Get-Config
 
-# 验证配置
-if (-not $config) {
-    Clear-Host
-    Write-Host "=== 配置错误 ===" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "配置文件读取失败或为空" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "按任意键退出..." -ForegroundColor Yellow
-    $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    exit
-}
-
-# 验证必需字段
-$missingFields = @()
-if (-not $config.models) { $missingFields += "models" }
-if (-not $config.defaultModel) { $missingFields += "defaultModel" }
-if (-not $config.projects) { $missingFields += "projects" }
-if (-not $config.defaultPermission) { $missingFields += "defaultPermission" }
-
-if ($missingFields.Count -gt 0) {
-    Clear-Host
-    Write-Host "=== 配置错误 ===" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "配置文件缺少必需字段: $($missingFields -join ', ')" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "按任意键退出..." -ForegroundColor Yellow
-    $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    exit
-}
-
-# 验证 models 是否为数组且不为空
-if ($config.models -isnot [array] -or $config.models.Count -eq 0) {
-    Clear-Host
-    Write-Host "=== 配置错误 ===" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "models 必须是一个非空数组" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "按任意键退出..." -ForegroundColor Yellow
-    $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    exit
-}
-
-# 验证每个模型是否有必需字段
-for ($i = 0; $i -lt $config.models.Count; $i++) {
-    $model = $config.models[$i]
-    $modelMissing = @()
-    if (-not $model.id) { $modelMissing += "id" }
-    if (-not $model.name) { $modelMissing += "name" }
-    if (-not $model.configFile) { $modelMissing += "configFile" }
-
-    if ($modelMissing.Count -gt 0) {
-        Clear-Host
-        Write-Host "=== 配置错误 ===" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "models[$i] 缺少必需字段: $($modelMissing -join ', ')" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "按任意键退出..." -ForegroundColor Yellow
-        $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    # 无法读取 → 只能重新初始化
+    if (-not $config) {
+        $si = 0
+        $siSelected = $false
+        while (-not $siSelected) {
+            Clear-Host
+            Write-Host "=== 配置错误 ===" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "配置文件读取失败或为空" -ForegroundColor Red
+            Write-Host ""
+            if ($si -eq 0) {
+                Write-Host "  重新初始化配置" -ForegroundColor Green -BackgroundColor Black
+                Write-Host "  退出程序" -ForegroundColor White
+            } else {
+                Write-Host "  重新初始化配置" -ForegroundColor Yellow
+                Write-Host "  退出程序" -ForegroundColor Green -BackgroundColor Black
+            }
+            Write-Host ""
+            Write-Host "使用方向键选择，回车确认" -ForegroundColor Gray
+            $si, $siSelected = Read-KeyInput -selectedIndex $si -maxIndex 1
+            if ($siSelected -and $si -eq -1) { $si = 0; $siSelected = $true }
+        }
+        if ($si -eq 0) { Remove-ConfigAndSettings $configPath; continue }
         exit
     }
 
-    # 确保 usageCount 存在
-    if ($null -eq $model.usageCount) {
-        $config.models[$i] | Add-Member -MemberType NoteProperty -Name "usageCount" -Value 0 -Force
+    # 检测所有问题
+    $problems = @()
+    $unrecoverable = $false
+
+    if (-not $config.models -or $config.models -isnot [array] -or $config.models.Count -eq 0) {
+        $problems += "models 为空或不存在"
+        $unrecoverable = $true
     }
-}
 
-# 验证 defaultModel 是否对应 models 中的某个 id
-$validModelIds = $config.models | ForEach-Object { $_.id }
-if ($config.defaultModel -notin $validModelIds) {
-    Clear-Host
-    Write-Host "=== 配置错误 ===" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "defaultModel 的值 '$($config.defaultModel)' 不存在于 models 中" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "按任意键退出..." -ForegroundColor Yellow
-    $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    exit
-}
+    if (-not $unrecoverable) {
+        for ($i = 0; $i -lt $config.models.Count; $i++) {
+            $m = $config.models[$i]
+            if (-not $m.id) { $problems += "models[$i] 缺少 id" }
+            if (-not $m.name) { $problems += "models[$i] 缺少 name" }
+            if (-not $m.configFile) { $problems += "models[$i] 缺少 configFile" }
+        }
+        $validModelIds = @($config.models | ForEach-Object { $_.id })
+        if (-not $config.defaultModel) {
+            $problems += "缺少 defaultModel"
+        } elseif ($config.defaultModel -notin $validModelIds) {
+            $problems += "defaultModel '$($config.defaultModel)' 不存在于 models 中"
+        }
+        if ($config.defaultPermission -notin @("yes", "no")) {
+            $problems += "defaultPermission 无效或缺失"
+        }
+    }
 
-# 验证字段值
-if ($config.defaultPermission -notin @("yes", "no")) {
-    Clear-Host
-    Write-Host "=== 配置错误 ===" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "defaultPermission 的值必须为 'yes' 或 'no'" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "按任意键退出..." -ForegroundColor Yellow
-    $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-    exit
+    # 无问题 → 确保补全 usageCount 后通过
+    if ($problems.Count -eq 0) {
+        $needsSave = $false
+        for ($i = 0; $i -lt $config.models.Count; $i++) {
+            if ($null -eq $config.models[$i].usageCount) {
+                $config.models[$i] | Add-Member -MemberType NoteProperty -Name "usageCount" -Value 0 -Force
+                $needsSave = $true
+            }
+        }
+        if ($needsSave) { Save-Config $config }
+        break
+    }
+
+    # 显示问题摘要并选择操作
+    if ($unrecoverable) {
+        $si = 0
+        $siSelected = $false
+        while (-not $siSelected) {
+            Clear-Host
+            Write-Host "=== 配置错误 ===" -ForegroundColor Red
+            Write-Host ""
+            foreach ($p in $problems) {
+                Write-Host "  - $p" -ForegroundColor Red
+            }
+            Write-Host ""
+            if ($si -eq 0) {
+                Write-Host "  重新初始化配置" -ForegroundColor Green -BackgroundColor Black
+                Write-Host "  退出程序" -ForegroundColor White
+            } else {
+                Write-Host "  重新初始化配置" -ForegroundColor Yellow
+                Write-Host "  退出程序" -ForegroundColor Green -BackgroundColor Black
+            }
+            Write-Host ""
+            Write-Host "使用方向键选择，回车确认" -ForegroundColor Gray
+            $si, $siSelected = Read-KeyInput -selectedIndex $si -maxIndex 1
+            if ($siSelected -and $si -eq -1) { $si = 0; $siSelected = $true }
+        }
+        if ($si -eq 0) { Remove-ConfigAndSettings $configPath; continue }
+        exit
+    }
+
+    # 可恢复错误
+    $si = 0
+    $siSelected = $false
+    while (-not $siSelected) {
+        Clear-Host
+        Write-Host "=== 配置错误 ===" -ForegroundColor Red
+        Write-Host ""
+        foreach ($p in $problems) {
+            Write-Host "  - $p" -ForegroundColor Red
+        }
+        Write-Host ""
+        $fixOptions = @("逐项修复", "重新初始化配置", "退出程序")
+        for ($fi = 0; $fi -lt $fixOptions.Count; $fi++) {
+            if ($fi -eq $si) {
+                Write-Host "  $($fixOptions[$fi])" -ForegroundColor Green -BackgroundColor Black
+            } else {
+                $color = if ($fi -eq 0) { "Yellow" } else { "White" }
+                Write-Host "  $($fixOptions[$fi])" -ForegroundColor $color
+            }
+        }
+        Write-Host ""
+        Write-Host "使用方向键选择，回车确认" -ForegroundColor Gray
+        $si, $siSelected = Read-KeyInput -selectedIndex $si -maxIndex 2
+        if ($siSelected -and $si -eq -1) { $si = 0; $siSelected = $true }
+    }
+    if ($si -eq 1) { Remove-ConfigAndSettings $configPath; continue }
+    if ($si -eq 2) { exit }
+
+    # --- 逐项修复 ---
+    for ($i = 0; $i -lt $config.models.Count; $i++) {
+        $m = $config.models[$i]
+
+        if (-not $m.id) {
+            Clear-Host
+            Write-Host "=== 修复配置 ===" -ForegroundColor Yellow
+            Write-Host "models[$i] 缺少 id" -ForegroundColor Red
+            Write-Host ""
+            $v = ""
+            while ([string]::IsNullOrWhiteSpace($v)) {
+                $v = Read-Host "请输入模型 ID"
+                if ([string]::IsNullOrWhiteSpace($v)) { Write-Host "模型 ID 不能为空!" -ForegroundColor Red }
+            }
+            $config.models[$i] | Add-Member -MemberType NoteProperty -Name "id" -Value $v -Force
+        }
+
+        if (-not $m.name) {
+            Clear-Host
+            Write-Host "=== 修复配置 ===" -ForegroundColor Yellow
+            Write-Host "models[$i] ($($config.models[$i].id)) 缺少 name" -ForegroundColor Red
+            Write-Host ""
+            $v = ""
+            while ([string]::IsNullOrWhiteSpace($v)) {
+                $v = Read-Host "请输入模型显示名称"
+                if ([string]::IsNullOrWhiteSpace($v)) { Write-Host "显示名称不能为空!" -ForegroundColor Red }
+            }
+            $config.models[$i] | Add-Member -MemberType NoteProperty -Name "name" -Value $v -Force
+        }
+
+        if (-not $m.configFile) {
+            Clear-Host
+            Write-Host "=== 修复配置 ===" -ForegroundColor Yellow
+            Write-Host "models[$i] ($($config.models[$i].id)) 缺少 configFile" -ForegroundColor Red
+            Write-Host ""
+            $v = ""
+            while ([string]::IsNullOrWhiteSpace($v)) {
+                $v = Read-Host "请输入配置文件名（如 settings-model.json）"
+                if ([string]::IsNullOrWhiteSpace($v)) { Write-Host "配置文件名不能为空!" -ForegroundColor Red }
+            }
+            # 验证文件存在性
+            $vPath = Join-Path $CONFIG_DIR $v
+            if (-not (Test-Path $vPath -PathType Leaf)) {
+                $vi = 0
+                $viSelected = $false
+                while (-not $viSelected) {
+                    Clear-Host
+                    Write-Host "=== 修复配置 ===" -ForegroundColor Yellow
+                    Write-Host "models[$i] ($($config.models[$i].id)) 缺少 configFile" -ForegroundColor Red
+                    Write-Host ""
+                    Write-Host "警告: 文件 '$v' 不存在于 $CONFIG_DIR" -ForegroundColor Yellow
+                    Write-Host "后续启动 Claude 时可能会报错。" -ForegroundColor Yellow
+                    Write-Host ""
+                    if ($vi -eq 0) {
+                        Write-Host "  重新输入文件名" -ForegroundColor Green -BackgroundColor Black
+                        Write-Host "  继续使用此文件名" -ForegroundColor White
+                    } else {
+                        Write-Host "  重新输入文件名" -ForegroundColor Yellow
+                        Write-Host "  继续使用此文件名" -ForegroundColor Green -BackgroundColor Black
+                    }
+                    Write-Host ""
+                    Write-Host "使用方向键选择，回车确认" -ForegroundColor Gray
+                    $vi, $viSelected = Read-KeyInput -selectedIndex $vi -maxIndex 1
+                    if ($viSelected -and $vi -eq -1) { $vi = 0; $viSelected = $true }
+                }
+                if ($vi -eq 0) {
+                    $v = ""
+                    while ([string]::IsNullOrWhiteSpace($v)) {
+                        $v = Read-Host "请输入配置文件名（如 settings-model.json）"
+                        if ([string]::IsNullOrWhiteSpace($v)) { Write-Host "配置文件名不能为空!" -ForegroundColor Red }
+                    }
+                }
+            }
+            $config.models[$i] | Add-Member -MemberType NoteProperty -Name "configFile" -Value $v -Force
+        }
+    }
+
+    # 修复 defaultModel
+    $validModelIds = @($config.models | ForEach-Object { $_.id })
+    if (-not $config.defaultModel -or $config.defaultModel -notin $validModelIds) {
+        Clear-Host
+        Write-Host "=== 修复配置 ===" -ForegroundColor Yellow
+        if (-not $config.defaultModel) {
+            Write-Host "缺少 defaultModel" -ForegroundColor Red
+        } else {
+            Write-Host "defaultModel '$($config.defaultModel)' 不存在于 models 中" -ForegroundColor Red
+        }
+        Write-Host ""
+        Write-Host "可用模型:" -ForegroundColor Cyan
+        for ($j = 0; $j -lt $validModelIds.Count; $j++) {
+            Write-Host "  $($j+1). $($validModelIds[$j])" -ForegroundColor White
+        }
+        Write-Host ""
+        $selected = $null
+        while (-not $selected) {
+            $input = Read-Host "请选择默认模型（输入序号或模型 ID）"
+            $num = 0
+            if ([int]::TryParse($input, [ref]$num) -and $num -ge 1 -and $num -le $validModelIds.Count) {
+                $selected = $validModelIds[$num - 1]
+            } elseif ($input -in $validModelIds) {
+                $selected = $input
+            } else {
+                Write-Host "无效选择，请重新输入" -ForegroundColor Red
+            }
+        }
+        $config.defaultModel = $selected
+    }
+
+    # 修复 defaultPermission
+    if ($config.defaultPermission -notin @("yes", "no")) {
+        Clear-Host
+        Write-Host "=== 修复配置 ===" -ForegroundColor Yellow
+        Write-Host "defaultPermission 无效或缺失" -ForegroundColor Red
+        Write-Host ""
+        $permValue = ""
+        while ($permValue -notin @("yes", "no")) {
+            $permInput = Read-Host "是否默认允许所有操作？(Y/n)"
+            if ([string]::IsNullOrWhiteSpace($permInput) -or $permInput -eq "y" -or $permInput -eq "Y") {
+                $permValue = "yes"
+            } elseif ($permInput -eq "n" -or $permInput -eq "N") {
+                $permValue = "no"
+            } else {
+                Write-Host "请输入 Y 或 n" -ForegroundColor Red
+            }
+        }
+        $config.defaultPermission = $permValue
+    }
+
+    Save-Config $config
+    continue
 }
 
 # 确保 projects 是数组
-if ($config.projects -isnot [array]) {
+if ($null -eq $config.projects) {
+    $config.projects = @()
+} elseif ($config.projects -isnot [array]) {
     $config.projects = @($config.projects)
 }
 
@@ -426,46 +837,6 @@ function Get-SortedProjects {
 
     $script:removedProjectsCount = $removedCount
     return @($validProjects | Sort-Object -Property usageCount -Descending)
-}
-
-# 读取键盘输入的函数（支持循环选择）
-function Read-KeyInput {
-    param(
-        [int]$selectedIndex,
-        [int]$maxIndex
-    )
-
-    while ($true) {
-        $key = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
-
-        switch ($key.VirtualKeyCode) {
-            38 { # 向上箭头
-                if ($selectedIndex -gt 0) {
-                    $selectedIndex--
-                } else {
-                    $selectedIndex = $maxIndex
-                }
-                return $selectedIndex, $false
-            }
-            40 { # 向下箭头
-                if ($selectedIndex -lt $maxIndex) {
-                    $selectedIndex++
-                } else {
-                    $selectedIndex = 0
-                }
-                return $selectedIndex, $false
-            }
-            13 { # 回车键
-                return $selectedIndex, $true
-            }
-            27 { # ESC键
-                return -1, $true
-            }
-            72 { # H键
-                return -2, $true
-            }
-        }
-    }
 }
 
 # 显示带选择的菜单函数
@@ -676,12 +1047,18 @@ function Add-Model {
     }
     Write-Host ""
 
-    # 输入模型 ID
-    $newModelId = ""
-    while ([string]::IsNullOrWhiteSpace($newModelId)) {
-        $newModelId = Read-Host "输入模型 ID（如 glm-5.1）"
-        if ([string]::IsNullOrWhiteSpace($newModelId)) {
-            Write-Host "模型 ID 不能为空!" -ForegroundColor Red
+    # 输入模型 ID（空行取消）
+    $newModelId = Read-HostWithCancel "输入模型 ID（如 glm-5.1）"
+    if ([string]::IsNullOrWhiteSpace($newModelId)) {
+        if (Confirm-Cancel) {
+            return
+        }
+        # 用户选择不取消，继续输入
+        while ([string]::IsNullOrWhiteSpace($newModelId)) {
+            $newModelId = Read-Host "输入模型 ID（如 glm-5.1）"
+            if ([string]::IsNullOrWhiteSpace($newModelId)) {
+                Write-Host "模型 ID 不能为空!" -ForegroundColor Red
+            }
         }
     }
 
@@ -703,25 +1080,80 @@ function Add-Model {
         return
     }
 
-    # 输入模型名称
-    $newModelName = ""
-    while ([string]::IsNullOrWhiteSpace($newModelName)) {
-        $newModelName = Read-Host "输入模型显示名称（如 GLM-5.1）"
-        if ([string]::IsNullOrWhiteSpace($newModelName)) {
-            Write-Host "模型显示名称不能为空!" -ForegroundColor Red
+    # 输入模型名称（空行取消）
+    $newModelName = Read-HostWithCancel "输入模型显示名称（如 GLM-5.1）"
+    if ([string]::IsNullOrWhiteSpace($newModelName)) {
+        if (Confirm-Cancel) {
+            return
+        }
+        while ([string]::IsNullOrWhiteSpace($newModelName)) {
+            $newModelName = Read-Host "输入模型显示名称（如 GLM-5.1）"
+            if ([string]::IsNullOrWhiteSpace($newModelName)) {
+                Write-Host "模型显示名称不能为空!" -ForegroundColor Red
+            }
         }
     }
 
-    # 输入配置文件名
-    $newConfigFile = ""
-    while ([string]::IsNullOrWhiteSpace($newConfigFile)) {
-        $newConfigFile = Read-Host "输入配置文件名（如 settings-$newModelId.json）"
-        if ([string]::IsNullOrWhiteSpace($newConfigFile)) {
-            Write-Host "配置文件名不能为空!" -ForegroundColor Red
-        } elseif ($newConfigFile -match '[\\/]') {
-            Write-Host "配置文件名不能包含路径分隔符!" -ForegroundColor Red
-            $newConfigFile = ""
+    # 输入配置文件名（空行取消）
+    $defaultConfigFile = "settings-$newModelId.json"
+    $newConfigFile = Read-HostWithCancel "输入配置文件名" -defaultValue $defaultConfigFile
+    if ([string]::IsNullOrWhiteSpace($newConfigFile)) {
+        if (Confirm-Cancel) {
+            return
         }
+        $newConfigFile = $defaultConfigFile
+    }
+
+    # 验证配置文件名
+    while ($newConfigFile -match '[\\\/]') {
+        Write-Host "配置文件名不能包含路径分隔符!" -ForegroundColor Red
+        $newConfigFile = Read-Host "输入配置文件名"
+        if ([string]::IsNullOrWhiteSpace($newConfigFile)) {
+            $newConfigFile = $defaultConfigFile
+        }
+    }
+
+    Write-Host ""
+    Write-Host "--- 配置 API 参数 ---" -ForegroundColor Cyan
+    Write-Host ""
+
+    # 输入 AUTH_TOKEN（必填，显示掩码提示，空行取消）
+    $authToken = Read-HostWithCancel "输入 ANTHROPIC_AUTH_TOKEN（API 密钥）"
+    if ([string]::IsNullOrWhiteSpace($authToken)) {
+        if (Confirm-Cancel) {
+            return
+        }
+        while ([string]::IsNullOrWhiteSpace($authToken)) {
+            $authToken = Read-Host "输入 ANTHROPIC_AUTH_TOKEN（API 密钥）"
+            if ([string]::IsNullOrWhiteSpace($authToken)) {
+                Write-Host "API 密钥不能为空!" -ForegroundColor Red
+            }
+        }
+    }
+
+    # 输入 BASE_URL（有默认值）
+    $defaultBaseUrl = "https://open.bigmodel.cn/api/anthropic"
+    $baseUrl = Read-HostWithCancel "输入 ANTHROPIC_BASE_URL" -defaultValue $defaultBaseUrl
+    if ([string]::IsNullOrWhiteSpace($baseUrl)) {
+        $baseUrl = $defaultBaseUrl
+    }
+
+    # 输入 OPUS_MODEL（默认 = modelId）
+    $opusModel = Read-HostWithCancel "输入 ANTHROPIC_DEFAULT_OPUS_MODEL" -defaultValue $newModelId
+    if ([string]::IsNullOrWhiteSpace($opusModel)) {
+        $opusModel = $newModelId
+    }
+
+    # 输入 SONNET_MODEL（默认 = modelId）
+    $sonnetModel = Read-HostWithCancel "输入 ANTHROPIC_DEFAULT_SONNET_MODEL" -defaultValue $newModelId
+    if ([string]::IsNullOrWhiteSpace($sonnetModel)) {
+        $sonnetModel = $newModelId
+    }
+
+    # 输入 HAIKU_MODEL（默认 = modelId）
+    $haikuModel = Read-HostWithCancel "输入 ANTHROPIC_DEFAULT_HAIKU_MODEL" -defaultValue $newModelId
+    if ([string]::IsNullOrWhiteSpace($haikuModel)) {
+        $haikuModel = $newModelId
     }
 
     # 检查配置文件是否存在，不存在则生成模板
@@ -731,7 +1163,9 @@ function Add-Model {
     if (-not (Test-Path $fullConfigPath)) {
         Write-Host ""
         Write-Host "配置文件不存在，正在生成模板..." -ForegroundColor Yellow
-        $templateGenerated = New-SettingsTemplate -modelId $newModelId -configFile $newConfigFile
+        $templateGenerated = New-SettingsTemplate -modelId $newModelId -configFile $newConfigFile `
+                                                  -authToken $authToken -baseUrl $baseUrl `
+                                                  -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel
     }
 
     # 添加模型到配置
@@ -747,7 +1181,9 @@ function Add-Model {
     Write-Host ""
     Write-Host "✅ 模型添加成功!" -ForegroundColor Green
     if ($templateGenerated) {
-        Write-Host "⚠️  已生成 $newConfigFile 模板，请填入 API 密钥。" -ForegroundColor Yellow
+        Write-Host "已生成 $newConfigFile 模板，API 配置已填入。" -ForegroundColor Green
+    } else {
+        Write-Host "配置文件已存在，未覆盖。" -ForegroundColor Yellow
     }
     Write-Host ""
     Write-Host "按任意键继续..." -ForegroundColor Yellow
