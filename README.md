@@ -1,5 +1,7 @@
 # cboot
 
+> **Version 1.0.0**
+
 一个 PowerShell 版 Claude Code 交互式启动器，支持多模型切换、项目管理、权限控制和智能排序。
 
 ## 功能特性
@@ -56,6 +58,22 @@ cd cboot
 ```
 
 操作流程：选择模型 → 选择项目目录 → 选择权限 → 启动 Claude Code
+
+### 使用示例
+
+首次运行时，cboot 会引导你完成初始化配置：
+
+**步骤 1/5 ~ 4/5 — 配置模型信息、API 参数、权限和项目目录**
+
+![初始化配置流程](docs/1.png)
+
+**步骤 5/5 — 确认配置并生成文件**
+
+![配置确认](docs/2.png)
+
+**配置文件生成成功**
+
+![配置完成](docs/3.png)
 
 ## 配置说明
 
@@ -133,6 +151,10 @@ cboot/
 │       ├── settings-glm.example.json
 │       ├── settings-glm-5-turbo.example.json
 │       └── settings-glm-5v-turbo.example.json
+├── docs/                          # 使用截图
+│   ├── 1.png
+│   ├── 2.png
+│   └── 3.png
 ├── README.md
 └── LICENSE
 ```
