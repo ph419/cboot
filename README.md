@@ -1,6 +1,6 @@
 # cboot
 
-> **Version 1.0.0**
+[![Version](https://img.shields.io/badge/version-1.0.1-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个 PowerShell 版 Claude Code 交互式启动器，支持多模型切换、项目管理、权限控制和智能排序。
 
@@ -27,18 +27,18 @@
 # 克隆项目
 git clone https://github.com/ph419/cboot.git
 cd cboot
-
-# 启动 cboot，首次运行会自动引导初始化配置
-.\cboot.ps1
 ```
-
-首次运行时，cboot 会检测配置是否缺失，并引导你完成初始化或逐项修复。
 
 ### 使用
 
 ```powershell
+# PowerShell 中运行
 .\cboot.ps1
+
+# 或双击 cboot.cmd 直接启动（自动绕过执行策略）
 ```
+
+首次运行时，cboot 会检测配置是否缺失，并引导你完成初始化或逐项修复。
 
 启动后进入交互式菜单：
 
@@ -119,7 +119,8 @@ cd cboot
         "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
         "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
         "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.1",
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.1"
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.1",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-4.5-air"
     }
 }
 ```
@@ -144,6 +145,7 @@ cd cboot
 ```
 cboot/
 ├── cboot.ps1                      # 主启动脚本
+├── cboot.cmd                      # 批处理启动器（双击运行）
 ├── config/
 │   ├── claude-config.example.json # 启动器配置示例
 │   └── settings/                  # 模型配置示例
@@ -158,6 +160,16 @@ cboot/
 ├── README.md
 └── LICENSE
 ```
+
+## Changelog
+
+### v1.0.1 (2026-04-26)
+
+- 新增 `cboot.cmd` 批处理启动器，支持双击运行，自动绕过 PowerShell 执行策略
+
+### v1.0.0 (2026-04-24)
+
+- 初始发布
 
 ## License
 
