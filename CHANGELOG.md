@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-04-26
+
+### Added
+
+- **批处理启动器 `cboot.cmd`** — 支持双击运行，自动绕过 PowerShell 执行策略，方便新用户零门槛启动
+
 ## [1.0.0] - 2025-04-25
 
 ### Added
