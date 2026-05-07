@@ -1,6 +1,6 @@
 # cboot
 
-[![Version](https://img.shields.io/badge/version-1.0.1-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.2-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个 PowerShell 版 Claude Code 交互式启动器，支持多模型切换、项目管理、权限控制和智能排序。
 
