@@ -162,6 +162,29 @@ function Confirm-Cancel {
     return ($selectedIndex -eq 0)
 }
 
+# 解析上下文窗口大小
+function Parse-ContextWindow {
+    param([string]$ContextInput)
+
+    if ([string]::IsNullOrWhiteSpace($ContextInput)) {
+        return @{ size = 1000000; original = "1M" }
+    }
+
+    $ContextInput = $ContextInput.Trim().ToUpper()
+
+    if ($ContextInput -match '^(\d+(?:\.\d+)?)\s*K$') {
+        $value = [double]$Matches[1]
+        return @{ size = [math]::Floor($value * 1000); original = "$($value)K" }
+    }
+
+    if ($ContextInput -match '^(\d+(?:\.\d+)?)\s*M$') {
+        $value = [double]$Matches[1]
+        return @{ size = [math]::Floor($value * 1000000); original = "$($value)M" }
+    }
+
+    return $null
+}
+
 # 生成 settings 模板文件
 function New-SettingsTemplate {
     param(
@@ -171,7 +194,8 @@ function New-SettingsTemplate {
         [string]$baseUrl,
         [string]$opusModel,
         [string]$sonnetModel,
-        [string]$haikuModel
+        [string]$haikuModel,
+        [int]$contextWindowSize = 1000000
     )
 
     $settingsPath = Join-Path $CONFIG_DIR $configFile
@@ -267,6 +291,14 @@ function New-SettingsTemplate {
     $template.env.ANTHROPIC_DEFAULT_OPUS_MODEL = $opusModel
     $template.env.ANTHROPIC_DEFAULT_SONNET_MODEL = $sonnetModel
     $template.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $haikuModel
+
+    # 上下文窗口设置
+    if ($contextWindowSize -lt 1000000) {
+        $template.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1"
+        $compactWindow = [math]::Floor($contextWindowSize * 0.9)
+        $template.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
+    }
+
     $template.model = $modelId
 
     # 5. 写入文件
@@ -289,8 +321,8 @@ function Initialize-Config {
     Write-Host "提示: 在输入步骤按回车（空行）可取消，项目路径步骤空行跳过" -ForegroundColor DarkGray
     Write-Host ""
 
-    # 步骤 1/5: 配置模型基础信息
-    Write-Host "步骤 1/5: 配置模型基础信息" -ForegroundColor Cyan
+    # 步骤 1/6: 配置模型基础信息
+    Write-Host "步骤 1/6: 配置模型基础信息" -ForegroundColor Cyan
     Write-Host ""
 
     $modelId = Read-HostWithCancel "请输入模型 ID（如 glm-5.1）"
@@ -319,8 +351,8 @@ function Initialize-Config {
     Write-Host "配置文件名: $configFile" -ForegroundColor Gray
     Write-Host ""
 
-    # 步骤 2/5: 配置 API 参数
-    Write-Host "步骤 2/5: 配置 API 参数" -ForegroundColor Cyan
+    # 步骤 2/6: 配置 API 参数
+    Write-Host "步骤 2/6: 配置 API 参数" -ForegroundColor Cyan
     Write-Host ""
 
     $authToken = Read-HostWithCancel "请输入 ANTHROPIC_AUTH_TOKEN（API 密钥）"
@@ -349,8 +381,34 @@ function Initialize-Config {
 
     Write-Host ""
 
-    # 步骤 3/5: 默认权限
-    Write-Host "步骤 3/5: 默认权限" -ForegroundColor Cyan
+    # 步骤 3/6: 上下文窗口设置
+    Write-Host "步骤 3/6: 上下文窗口设置" -ForegroundColor Cyan
+    Write-Host ""
+
+    $contextWindowSize = 0
+    $contextWindowOriginal = ""
+
+    while ($contextWindowSize -eq 0) {
+        $windowInput = Read-Host "请输入上下文窗口大小（如 200K、500K、1M，默认 1M）"
+
+        if ([string]::IsNullOrWhiteSpace($windowInput)) {
+            $contextWindowSize = 1000000
+            $contextWindowOriginal = "1M"
+        } else {
+            $parsed = Parse-ContextWindow -ContextInput $windowInput
+            if ($parsed) {
+                $contextWindowSize = $parsed.size
+                $contextWindowOriginal = $parsed.original
+            } else {
+                Write-Host "无效输入，请重新输入（格式：200K、500K、1M）" -ForegroundColor Red
+            }
+        }
+    }
+
+    Write-Host ""
+
+    # 步骤 4/6: 默认权限
+    Write-Host "步骤 4/6: 默认权限" -ForegroundColor Cyan
     Write-Host ""
 
     $defaultPermission = ""
@@ -366,8 +424,8 @@ function Initialize-Config {
     }
     Write-Host ""
 
-    # 步骤 4/5: 项目目录
-    Write-Host "步骤 4/5: 项目目录" -ForegroundColor Cyan
+    # 步骤 5/6: 项目目录
+    Write-Host "步骤 5/6: 项目目录" -ForegroundColor Cyan
     Write-Host ""
 
     $projectPath = Read-HostWithCancel "请输入项目目录路径（留空跳过）"
@@ -390,6 +448,7 @@ function Initialize-Config {
         Write-Host "  Opus 模型:    $opusModel" -ForegroundColor White
         Write-Host "  Sonnet 模型:  $sonnetModel" -ForegroundColor White
         Write-Host "  Haiku 模型:   $haikuModel" -ForegroundColor White
+        Write-Host "  上下文窗口:   $contextWindowOriginal" -ForegroundColor White
         Write-Host ""
         Write-Host "  默认权限:     $(if ($defaultPermission -eq 'yes') { '允许所有操作' } else { '需要确认' })" -ForegroundColor White
         Write-Host "  项目目录:     $(if ([string]::IsNullOrWhiteSpace($projectPath)) { '（未设置）' } else { $projectPath })" -ForegroundColor White
@@ -418,6 +477,7 @@ function Initialize-Config {
                 id = $modelId
                 name = $modelName
                 configFile = $configFile
+                contextWindow = $contextWindowOriginal
                 usageCount = 0
             }
         )
@@ -438,8 +498,8 @@ function Initialize-Config {
         }
     }
 
-    # 步骤 5/5: 保存配置并生成模板
-    Write-Host "步骤 5/5: 保存配置" -ForegroundColor Cyan
+    # 步骤 6/6: 保存配置并生成模板
+    Write-Host "步骤 6/6: 保存配置" -ForegroundColor Cyan
     Write-Host ""
 
     # 保存配置文件
@@ -460,7 +520,8 @@ function Initialize-Config {
     # 生成 settings 模板
     $templateCreated = New-SettingsTemplate -modelId $modelId -configFile $configFile `
                                              -authToken $authToken -baseUrl $baseUrl `
-                                             -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel
+                                             -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel `
+                                             -contextWindowSize $contextWindowSize
 
     # 显示完成信息
     Clear-Host
@@ -775,7 +836,7 @@ function Update-ModelUsage {
     for ($i = 0; $i -lt $config.models.Count; $i++) {
         if ($config.models[$i].id -eq $modelId) {
             $currentCount = if ($config.models[$i].usageCount) { $config.models[$i].usageCount } else { 0 }
-            $config.models[$i].usageCount = [Math]::Max(0, $currentCount + $delta)
+            $config.models[$i] | Add-Member -MemberType NoteProperty -Name "usageCount" -Value ([Math]::Max(0, $currentCount + $delta)) -Force
             Save-Config $config
             break
         }
@@ -795,7 +856,7 @@ function Update-ProjectUsage {
         $path = if ($p -is [string]) { $p } else { $p.path }
         if ($path -eq $projectPath) {
             $currentCount = if ($p.usageCount) { $p.usageCount } else { 0 }
-            $config.projects[$i].usageCount = [Math]::Max(0, $currentCount + $delta)
+            $config.projects[$i] | Add-Member -MemberType NoteProperty -Name "usageCount" -Value ([Math]::Max(0, $currentCount + $delta)) -Force
             Save-Config $config
             break
         }
@@ -1156,6 +1217,31 @@ function Add-Model {
         $haikuModel = $newModelId
     }
 
+    # 输入上下文窗口大小
+    Write-Host ""
+    Write-Host "--- 配置上下文窗口 ---" -ForegroundColor Cyan
+    Write-Host ""
+
+    $contextWindowSize = 0
+    $contextWindowOriginal = ""
+
+    while ($contextWindowSize -eq 0) {
+        $windowInput = Read-Host "输入上下文窗口大小（如 200K、500K、1M，默认 1M）"
+
+        if ([string]::IsNullOrWhiteSpace($windowInput)) {
+            $contextWindowSize = 1000000
+            $contextWindowOriginal = "1M"
+        } else {
+            $parsed = Parse-ContextWindow -ContextInput $windowInput
+            if ($parsed) {
+                $contextWindowSize = $parsed.size
+                $contextWindowOriginal = $parsed.original
+            } else {
+                Write-Host "无效输入，请重新输入（格式：200K、500K、1M）" -ForegroundColor Red
+            }
+        }
+    }
+
     # 检查配置文件是否存在，不存在则生成模板
     $fullConfigPath = Join-Path $CONFIG_DIR $newConfigFile
     $templateGenerated = $false
@@ -1165,7 +1251,29 @@ function Add-Model {
         Write-Host "配置文件不存在，正在生成模板..." -ForegroundColor Yellow
         $templateGenerated = New-SettingsTemplate -modelId $newModelId -configFile $newConfigFile `
                                                   -authToken $authToken -baseUrl $baseUrl `
-                                                  -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel
+                                                  -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel `
+                                                  -contextWindowSize $contextWindowSize
+    } else {
+        # 配置文件已存在，需要更新上下文窗口 env
+        try {
+            $settingsContent = Get-Content $fullConfigPath -Raw -Encoding UTF8
+            $settings = $settingsContent | ConvertFrom-Json
+            if ($settings.env) {
+                if ($contextWindowSize -lt 1000000) {
+                    $settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1"
+                    $compactWindow = [math]::Floor($contextWindowSize * 0.9)
+                    $settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
+                } else {
+                    # 移除上下文窗口相关的 env（如果存在）
+                    $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT') | Out-Null
+                    $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW') | Out-Null
+                }
+                $settingsJson = $settings | ConvertTo-Json -Depth 10 | Format-Json
+                Set-Content -Path $fullConfigPath -Value $settingsJson -Encoding UTF8
+            }
+        } catch {
+            # 静默失败
+        }
     }
 
     # 添加模型到配置
@@ -1173,6 +1281,7 @@ function Add-Model {
         id = $newModelId
         name = $newModelName
         configFile = $newConfigFile
+        contextWindow = $contextWindowOriginal
         usageCount = 0
     }
 
@@ -1282,6 +1391,269 @@ function Remove-Model {
                         return
                     } else { # 否
                         return
+                    }
+                }
+            }
+        }
+    }
+}
+
+# 编辑模型配置的函数
+function Edit-ModelConfig {
+    $config = Get-Config
+
+    if ($config.models.Count -eq 0) {
+        Clear-Host
+        Write-Host "=== 修改配置 ===" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "没有配置的模型!" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "按任意键继续..." -ForegroundColor Yellow
+        $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        return
+    }
+
+    # 第一级：选择模型
+    $modelSelectedIndex = 0
+
+    while ($true) {
+        $config = Get-Config
+        $maxModelIndex = $config.models.Count - 1
+        if ($modelSelectedIndex -gt $maxModelIndex) { $modelSelectedIndex = $maxModelIndex }
+
+        Clear-Host
+        Write-Host "=== 修改配置 ===" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "选择要修改的模型:" -ForegroundColor Yellow
+        Write-Host ""
+
+        for ($i = 0; $i -lt $config.models.Count; $i++) {
+            $m = $config.models[$i]
+            if ($i -eq $modelSelectedIndex) {
+                Write-Host "  $($i+1). $($m.name) ($($m.id))" -ForegroundColor Green -BackgroundColor Black
+            } else {
+                Write-Host "  $($i+1). $($m.name) ($($m.id))" -ForegroundColor White
+            }
+        }
+
+        Write-Host ""
+        Write-Host "使用方向键导航，回车选择，ESC返回" -ForegroundColor Gray
+
+        $modelSelectedIndex, $modelSelected = Read-KeyInput -selectedIndex $modelSelectedIndex -maxIndex $maxModelIndex
+
+        if ($modelSelected) {
+            if ($modelSelectedIndex -eq -1) { # ESC - 返回主菜单
+                return
+            }
+
+            # 获取选中的模型
+            $selectedModel = $config.models[$modelSelectedIndex]
+            $modelId = $selectedModel.id
+            $modelName = $selectedModel.name
+            $configFile = $selectedModel.configFile
+
+            # 读取 settings 文件
+            $settingsPath = Join-Path $CONFIG_DIR $configFile
+            $settings = $null
+            if (Test-Path $settingsPath) {
+                try {
+                    $settingsContent = Get-Content $settingsPath -Raw -Encoding UTF8
+                    $settings = $settingsContent | ConvertFrom-Json
+                } catch {
+                    Clear-Host
+                    Write-Host "读取配置文件失败!" -ForegroundColor Red
+                    Write-Host ""
+                    Write-Host "按任意键继续..." -ForegroundColor Yellow
+                    $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                    continue
+                }
+            } else {
+                Clear-Host
+                Write-Host "配置文件不存在: $configFile" -ForegroundColor Red
+                Write-Host ""
+                Write-Host "按任意键继续..." -ForegroundColor Yellow
+                $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                continue
+            }
+
+            # 第二级：选择字段
+            $fieldSelectedIndex = 0
+
+            while ($true) {
+                # 确保 env 存在
+                if (-not $settings.env) {
+                    $settings | Add-Member -MemberType NoteProperty -Name "env" -Value @{} -Force
+                }
+
+                # 获取当前值
+                $currentToken = if ($settings.env.ANTHROPIC_AUTH_TOKEN) {
+                    $token = $settings.env.ANTHROPIC_AUTH_TOKEN
+                    if ($token.Length -gt 8) {
+                        $token.Substring(0, 8) + "..."
+                    } else {
+                        $token
+                    }
+                } else { "" }
+
+                $currentBaseUrl = if ($settings.env.ANTHROPIC_BASE_URL) { $settings.env.ANTHROPIC_BASE_URL } else { "" }
+                $currentOpus = if ($settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL) { $settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL } else { "" }
+                $currentSonnet = if ($settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL) { $settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL } else { "" }
+                $currentHaiku = if ($settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) { $settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL } else { "" }
+                $currentContext = if ($selectedModel.contextWindow) { $selectedModel.contextWindow } else { "1M" }
+
+                $fieldItems = @(
+                    "API 密钥    : $currentToken",
+                    "Base URL    : $currentBaseUrl",
+                    "Opus 模型   : $currentOpus",
+                    "Sonnet 模型  : $currentSonnet",
+                    "Haiku 模型   : $currentHaiku",
+                    "上下文窗口   : $currentContext",
+                    "返回"
+                )
+
+                Clear-Host
+                Write-Host "=== 修改配置 - $modelName ===" -ForegroundColor Green
+                Write-Host ""
+                Write-Host "选择要修改的字段:" -ForegroundColor Yellow
+                Write-Host ""
+
+                for ($i = 0; $i -lt $fieldItems.Count; $i++) {
+                    if ($i -eq $fieldSelectedIndex) {
+                        Write-Host "  $($fieldItems[$i])" -ForegroundColor Green -BackgroundColor Black
+                    } else {
+                        Write-Host "  $($fieldItems[$i])" -ForegroundColor White
+                    }
+                }
+
+                Write-Host ""
+                Write-Host "使用方向键导航，回车选择，ESC返回" -ForegroundColor Gray
+
+                $fieldSelectedIndex, $fieldSelected = Read-KeyInput -selectedIndex $fieldSelectedIndex -maxIndex 6
+
+                if ($fieldSelected) {
+                    if ($fieldSelectedIndex -eq -1) { # ESC - 返回第一级
+                        break
+                    }
+
+                    if ($fieldSelectedIndex -eq 6) { # 返回
+                        break
+                    }
+
+                    # 编辑字段
+                    Clear-Host
+                    Write-Host "=== 修改字段 ===" -ForegroundColor Green
+                    Write-Host ""
+
+                    switch ($fieldSelectedIndex) {
+                        0 { # API 密钥
+                            Write-Host "当前值: $currentToken" -ForegroundColor Cyan
+                            Write-Host ""
+                            $newValue = Read-Host "输入新值（留空保持不变）"
+                            if (-not [string]::IsNullOrWhiteSpace($newValue)) {
+                                $settings.env.ANTHROPIC_AUTH_TOKEN = $newValue
+                            }
+                        }
+                        1 { # Base URL
+                            Write-Host "当前值: $currentBaseUrl" -ForegroundColor Cyan
+                            Write-Host ""
+                            $newValue = Read-Host "输入新值（留空保持不变）"
+                            if (-not [string]::IsNullOrWhiteSpace($newValue)) {
+                                $settings.env.ANTHROPIC_BASE_URL = $newValue
+                            }
+                        }
+                        2 { # Opus 模型
+                            Write-Host "当前值: $currentOpus" -ForegroundColor Cyan
+                            Write-Host ""
+                            $newValue = Read-Host "输入新值（留空保持不变）"
+                            if (-not [string]::IsNullOrWhiteSpace($newValue)) {
+                                $settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL = $newValue
+                            }
+                        }
+                        3 { # Sonnet 模型
+                            Write-Host "当前值: $currentSonnet" -ForegroundColor Cyan
+                            Write-Host ""
+                            $newValue = Read-Host "输入新值（留空保持不变）"
+                            if (-not [string]::IsNullOrWhiteSpace($newValue)) {
+                                $settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL = $newValue
+                            }
+                        }
+                        4 { # Haiku 模型
+                            Write-Host "当前值: $currentHaiku" -ForegroundColor Cyan
+                            Write-Host ""
+                            $newValue = Read-Host "输入新值（留空保持不变）"
+                            if (-not [string]::IsNullOrWhiteSpace($newValue)) {
+                                $settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $newValue
+                            }
+                        }
+                        5 { # 上下文窗口
+                            Write-Host "当前值: $currentContext" -ForegroundColor Cyan
+                            Write-Host ""
+
+                            $newContextSize = 0
+                            $newContextOriginal = ""
+
+                            while ($newContextSize -eq 0) {
+                                $windowInput = Read-Host "输入新值（如 200K、500K、1M，留空保持不变）"
+
+                                if ([string]::IsNullOrWhiteSpace($windowInput)) {
+                                    $newContextSize = -1  # 标记为保持不变
+                                    break
+                                }
+
+                                $parsed = Parse-ContextWindow -ContextInput $windowInput
+                                if ($parsed) {
+                                    $newContextSize = $parsed.size
+                                    $newContextOriginal = $parsed.original
+                                } else {
+                                    Write-Host "无效输入，请重新输入（格式：200K、500K、1M）" -ForegroundColor Red
+                                }
+                            }
+
+                            if ($newContextSize -ne -1) {
+                                # 更新 settings env
+                                if ($newContextSize -lt 1000000) {
+                                    $settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1"
+                                    $compactWindow = [math]::Floor($newContextSize * 0.9)
+                                    $settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
+                                } else {
+                                    # 移除上下文窗口相关的 env（如果存在）
+                                    if ($settings.env.PSObject.Properties['CLAUDE_CODE_DISABLE_1M_CONTEXT']) {
+                                        $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT')
+                                    }
+                                    if ($settings.env.PSObject.Properties['CLAUDE_CODE_AUTO_COMPACT_WINDOW']) {
+                                        $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW')
+                                    }
+                                }
+
+                                # 同步更新 claude-config.json 中的 contextWindow
+                                $config = Get-Config
+                                for ($i = 0; $i -lt $config.models.Count; $i++) {
+                                    if ($config.models[$i].id -eq $modelId) {
+                                        $config.models[$i] | Add-Member -MemberType NoteProperty -Name "contextWindow" -Value $newContextOriginal -Force
+                                        break
+                                    }
+                                }
+                                Save-Config $config
+                            }
+                        }
+                    }
+
+                    # 保存 settings 文件
+                    try {
+                        $settingsJson = $settings | ConvertTo-Json -Depth 10 | Format-Json
+                        Set-Content -Path $settingsPath -Value $settingsJson -Encoding UTF8
+
+                        Clear-Host
+                        Write-Host "✅ 配置已保存!" -ForegroundColor Green
+                        Write-Host ""
+                        Write-Host "按任意键继续..." -ForegroundColor Yellow
+                        $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                    } catch {
+                        Clear-Host
+                        Write-Host "保存失败: $_" -ForegroundColor Red
+                        Write-Host ""
+                        Write-Host "按任意键继续..." -ForegroundColor Yellow
+                        $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
                     }
                 }
             }
@@ -1510,6 +1882,7 @@ try {
         $menuItems = @(
             "使用 Claude",
             "添加模型",
+            "修改配置",
             "移除模型",
             "添加项目目录",
             "移除项目目录",
@@ -1669,16 +2042,19 @@ try {
                     1 { # 添加模型
                         Add-Model
                     }
-                    2 { # 移除模型
+                    2 { # 修改配置
+                        Edit-ModelConfig
+                    }
+                    3 { # 移除模型
                         Remove-Model
                     }
-                    3 { # 添加项目目录
+                    4 { # 添加项目目录
                         Add-ProjectDirectory
                     }
-                    4 { # 移除项目目录
+                    5 { # 移除项目目录
                         Remove-ProjectDirectory
                     }
-                    5 { # 退出
+                    6 { # 退出
                         Clear-Host
                         Write-Host "再见!" -ForegroundColor Green
                         exit

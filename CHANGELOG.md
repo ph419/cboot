@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-05-07
+
+### Added
+
+- **上下文窗口设置** — 初始化和添加模型时支持设置上下文窗口大小（如 200K、500K、1M），自动配置 `CLAUDE_CODE_DISABLE_1M_CONTEXT` 和 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 环境变量
+- **配置文件编辑功能** — 主菜单新增「修改配置」选项，支持交互式编辑 API 密钥、Base URL、模型映射、上下文窗口等字段，ESC 可安全返回
+
+### Fixed
+
+- **contextWindow 属性设置异常** — 修复旧配置（无 contextWindow 字段）时编辑上下文窗口报错的问题，改用 `Add-Member -Force` 安全设置属性
+
 ## [1.0.1] - 2026-04-26
 
 ### Added
