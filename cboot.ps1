@@ -295,7 +295,7 @@ function New-SettingsTemplate {
     # 上下文窗口设置
     if ($contextWindowSize -lt 1000000) {
         $template.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1"
-        $compactWindow = [math]::Floor($contextWindowSize * 0.9)
+        $compactWindow = $contextWindowSize
         $template.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
     }
 
@@ -1261,7 +1261,7 @@ function Add-Model {
             if ($settings.env) {
                 if ($contextWindowSize -lt 1000000) {
                     $settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1"
-                    $compactWindow = [math]::Floor($contextWindowSize * 0.9)
+                    $compactWindow = $contextWindowSize
                     $settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
                 } else {
                     # 移除上下文窗口相关的 env（如果存在）
@@ -1613,7 +1613,7 @@ function Edit-ModelConfig {
                                 # 更新 settings env
                                 if ($newContextSize -lt 1000000) {
                                     $settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1"
-                                    $compactWindow = [math]::Floor($newContextSize * 0.9)
+                                    $compactWindow = $newContextSize
                                     $settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
                                 } else {
                                     # 移除上下文窗口相关的 env（如果存在）

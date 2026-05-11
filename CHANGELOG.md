@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2026-05-11
+
+### Changed
+
+- **移除上下文窗口 90% 比例设定** — 上下文窗口值不再乘以 0.9，直接使用用户填写的原始值（如填 200K 则设为 200000）
+
 ## [1.0.2] - 2026-05-07
 
 ### Added
