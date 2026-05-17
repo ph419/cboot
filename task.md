@@ -8,11 +8,13 @@
 | WP-004 | 上下文窗口设置 + 配置文件编辑功能 | P1 | ✅ 完成 | 25min | [docs/wp/WP-004.md](docs/wp/WP-004.md) |
 | WP-005 | 修复 contextWindow 属性设置异常 | P0 | ✅ 完成 | 5min | [docs/wp/WP-005.md](docs/wp/WP-005.md) |
 | WP-006 | 移除上下文窗口 90% 比例设定 | P1 | ✅ 完成 | 10min | [docs/wp/WP-006.md](docs/wp/WP-006.md) |
+| WP-007 | 修复 CLAUDE_CODE_DISABLE_1M_CONTEXT 属性设置异常 | P0 | ✅ 完成 | 5min | [docs/wp/WP-007.md](docs/wp/WP-007.md) |
 
 ## ✅ 最近完成
 
 | 完成日期 | 工作包ID | 模块名称 | 说明 |
 |----------|----------|----------|------|
+| 2026-05-17 | WP-007 | 修复 CLAUDE_CODE_DISABLE_1M_CONTEXT 属性设置异常 | 3 处直接赋值改为 Add-Member -Force / 先检查再 Remove，修复旧版 settings 文件无属性导致的异常 |
 | 2026-05-11 | WP-006 | 移除上下文窗口 90% 比例设定 | 移除 3 处 `[math]::Floor($xxx * 0.9)` 逻辑，改为直接使用用户填写的原始值 |
 | 2026-05-07 | WP-005 | contextWindow 属性修复 | Add-Member -Force 替换直接赋值，修复 PSCustomObject 属性不存在异常 |
 | 2026-05-07 | WP-004 | 上下文窗口设置 + 配置文件编辑 | 4 子包串行完成: Parse-ContextWindow + Initialize-Config 6步 + Add-Model 上下文窗口 + Edit-ModelConfig 两级菜单 + 主菜单更新，+393/-17 行 |

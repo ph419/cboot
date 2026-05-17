@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2026-05-17
+
+### Fixed
+
+- **CLAUDE_CODE_DISABLE_1M_CONTEXT 属性设置异常** — 修复 `Add-Model` 和 `Edit-ModelConfig` 中直接赋值 `CLAUDE_CODE_DISABLE_1M_CONTEXT` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 在旧版 settings 文件（无对应属性）时抛出异常的问题，改用 `Add-Member -Force` 设置属性、先检查存在性再 `Remove`
+
 ## [1.0.3] - 2026-05-11
 
 ### Changed

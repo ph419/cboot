@@ -1260,13 +1260,17 @@ function Add-Model {
             $settings = $settingsContent | ConvertFrom-Json
             if ($settings.env) {
                 if ($contextWindowSize -lt 1000000) {
-                    $settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1"
+                    $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_DISABLE_1M_CONTEXT' -Value "1" -Force
                     $compactWindow = $contextWindowSize
-                    $settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
+                    $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' -Value "$compactWindow" -Force
                 } else {
                     # 移除上下文窗口相关的 env（如果存在）
-                    $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT') | Out-Null
-                    $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW') | Out-Null
+                    if ($settings.env.PSObject.Properties['CLAUDE_CODE_DISABLE_1M_CONTEXT']) {
+                        $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT')
+                    }
+                    if ($settings.env.PSObject.Properties['CLAUDE_CODE_AUTO_COMPACT_WINDOW']) {
+                        $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW')
+                    }
                 }
                 $settingsJson = $settings | ConvertTo-Json -Depth 10 | Format-Json
                 Set-Content -Path $fullConfigPath -Value $settingsJson -Encoding UTF8
@@ -1612,9 +1616,9 @@ function Edit-ModelConfig {
                             if ($newContextSize -ne -1) {
                                 # 更新 settings env
                                 if ($newContextSize -lt 1000000) {
-                                    $settings.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1"
+                                    $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_DISABLE_1M_CONTEXT' -Value "1" -Force
                                     $compactWindow = $newContextSize
-                                    $settings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
+                                    $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' -Value "$compactWindow" -Force
                                 } else {
                                     # 移除上下文窗口相关的 env（如果存在）
                                     if ($settings.env.PSObject.Properties['CLAUDE_CODE_DISABLE_1M_CONTEXT']) {
