@@ -230,7 +230,7 @@ function New-SettingsTemplate {
                         hooks = @(
                             @{
                                 type = "command"
-                                command = "ccsp --preset MBTC --theme powerline"
+                                command = "ccstatusline"
                                 async = $true
                                 timeout = 5000
                             }
@@ -276,7 +276,8 @@ function New-SettingsTemplate {
             autoDreamEnabled = $true
             statusLine = @{
                 type = "command"
-                command = "ccsp --preset MBTC --theme powerline"
+                command = "ccstatusline"
+                refreshInterval = 10
             }
         }
     }

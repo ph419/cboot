@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.5] - 2026-05-20
+
+### Changed
+
+- **statusLine 配置模板迁移** — 将所有 statusLine 从 `ccsp --preset MBTC --theme powerline` 迁移到 `ccstatusline`，新增 `refreshInterval: 10` 属性。涉及 4 个 settings 模板文件和 `cboot.ps1` 共 10 处更新
+
 ## [1.0.4] - 2026-05-17
 
 ### Fixed

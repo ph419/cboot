@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "ccsp --preset MBTC --theme powerline",
+            "command": "ccstatusline",
             "async": true,
             "timeout": 5000
           }
@@ -92,6 +92,7 @@
   "model": "glm-5",
   "statusLine": {
     "type": "command",
-    "command": "ccsp --preset MBTC --theme powerline"
+    "command": "ccstatusline",
+    "refreshInterval": 10
   }
 }

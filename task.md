@@ -9,8 +9,13 @@
 | WP-005 | 修复 contextWindow 属性设置异常 | P0 | ✅ 完成 | 5min | [docs/wp/WP-005.md](docs/wp/WP-005.md) |
 | WP-006 | 移除上下文窗口 90% 比例设定 | P1 | ✅ 完成 | 10min | [docs/wp/WP-006.md](docs/wp/WP-006.md) |
 | WP-007 | 修复 CLAUDE_CODE_DISABLE_1M_CONTEXT 属性设置异常 | P0 | ✅ 完成 | 5min | [docs/wp/WP-007.md](docs/wp/WP-007.md) |
+| WP-008 | 更新 statusLine 配置模板（ccsp → ccstatusline） | P2 | ✅ 完成 | 3min | [docs/wp/WP-008.md](docs/wp/WP-008.md) |
 
 ## ✅ 最近完成
+
+| 完成日期 | 工作包ID | 模块名称 | 说明 |
+|----------|----------|----------|------|
+| 2026-05-20 | WP-008 | 更新 statusLine 配置模板 | ccsp → ccstatusline 迁移，4 模板文件 + cboot.ps1 共 10 处更新，新增 refreshInterval: 10 |
 
 | 完成日期 | 工作包ID | 模块名称 | 说明 |
 |----------|----------|----------|------|
