@@ -1,6 +1,6 @@
 # cboot
 
-[![Version](https://img.shields.io/badge/version-1.0.5-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.6-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个 PowerShell 版 Claude Code 交互式启动器，支持多模型切换、项目管理、权限控制和智能排序。
 
@@ -63,11 +63,11 @@ cd cboot
 
 首次运行时，cboot 会引导你完成初始化配置：
 
-**步骤 1/5 ~ 4/5 — 配置模型信息、API 参数、权限和项目目录**
+**步骤 1/5 ~ 5/7 — 配置模型信息、API 参数、Teammate 模型、上下文窗口、权限和项目目录**
 
 ![初始化配置流程](docs/1.png)
 
-**步骤 5/5 — 确认配置并生成文件**
+**步骤 7/7 — 确认配置并生成文件**
 
 ![配置确认](docs/2.png)
 
@@ -162,6 +162,14 @@ cboot/
 ```
 
 ## Changelog
+
+### v1.0.6 (2026-06-04)
+
+- 新增 Teammate 默认模型配置（`teammateDefaultModel` / `teammateMode`），初始化、添加模型、编辑配置全流程支持
+
+### v1.0.5 (2026-05-20)
+
+- statusLine 配置模板迁移 ccsp → ccstatusline
 
 ### v1.0.4 (2026-05-17)
 

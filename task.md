@@ -10,11 +10,20 @@
 | WP-006 | 移除上下文窗口 90% 比例设定 | P1 | ✅ 完成 | 10min | [docs/wp/WP-006.md](docs/wp/WP-006.md) |
 | WP-007 | 修复 CLAUDE_CODE_DISABLE_1M_CONTEXT 属性设置异常 | P0 | ✅ 完成 | 5min | [docs/wp/WP-007.md](docs/wp/WP-007.md) |
 | WP-008 | 更新 statusLine 配置模板（ccsp → ccstatusline） | P2 | ✅ 完成 | 3min | [docs/wp/WP-008.md](docs/wp/WP-008.md) |
+| WP-009 | 支持 Default Teammate Model 配置 | P1 | ✅ 完成 | 15min | [docs/wp/WP-009.md](docs/wp/WP-009.md) |
+| WP-009-2-test | Teammate Model 配置测试用例 | - | ✅ 完成 | - | [docs/wp/WP-009-2-test.md](docs/wp/WP-009-2-test.md) |
+| WP-009-3-verify | Teammate Model 配置测试验证 | - | ✅ 完成 | - | [docs/wp/WP-009-3-verify.md](docs/wp/WP-009-3-verify.md) |
+| WP-009-4-review | Teammate Model 配置代码审查 | - | ✅ 完成 | - | [docs/wp/WP-009-4-review.md](docs/wp/WP-009-4-review.md) |
 
 ## ✅ 最近完成
 
 | 完成日期 | 工作包ID | 模块名称 | 说明 |
 |----------|----------|----------|------|
+| 2026-06-03 | WP-009 | 支持 Default Teammate Model 配置 | 4 子包串行完成: impl → test → verify → review，cboot.ps1 + 4 示例文件，新增 teammateDefaultModel 配置支持 |
+| 2026-06-03 | WP-009-4-review | Teammate Model 配置代码审查 | 4 维度审查通过：代码风格一致性、功能正确性、兼容性、架构合规，无严重问题 |
+| 2026-06-03 | WP-009-3-verify | Teammate Model 配置测试验证 | 6 个测试用例全部通过，代码审查 + 语法检查 + JSON 验证，无回归问题 |
+| 2026-06-03 | WP-009-2-test | Teammate Model 配置测试用例 | 6 个测试用例编写：新建、编辑、兼容、首次引导场景覆盖 |
+| 2026-06-03 | WP-009-1-impl | 实现 Default Teammate Model 配置 | cboot.ps1 6 处修改 + 4 示例文件，New-SettingsTemplate/Add-Model/Initialize-Config/Edit-ModelConfig 全流程支持 |
 | 2026-05-20 | WP-008 | 更新 statusLine 配置模板 | ccsp → ccstatusline 迁移，4 模板文件 + cboot.ps1 共 10 处更新，新增 refreshInterval: 10 |
 
 | 完成日期 | 工作包ID | 模块名称 | 说明 |

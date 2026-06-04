@@ -89,6 +89,8 @@
   "autoUpdatesChannel": "latest",
   "skipDangerousModePermissionPrompt": true,
   "autoDreamEnabled": true,
+  "teammateDefaultModel": null,
+  "teammateMode": "auto",
   "model": "glm-5v-turbo",
   "statusLine": {
     "type": "command",

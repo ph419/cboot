@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.6] - 2026-06-04
+
+### Added
+
+- **Teammate 默认模型配置** — 支持在 settings 中设置 `teammateDefaultModel` 和 `teammateMode`，控制 Claude Code 的 teammate 子代理使用指定模型。涉及 `cboot.ps1` 6 处修改 + 4 个 settings 模板文件：
+  - `New-SettingsTemplate` 新增 `-teammateModel` 参数，模板生成时写入 `teammateDefaultModel` / `teammateMode`
+  - `Initialize-Config` 新增步骤 3/7 交互输入 Teammate 模型（步骤从 6 步扩展为 7 步）
+  - `Add-Model` 新增 Teammate 模型输入，已有配置文件更新时写入 teammate 字段
+  - `Edit-ModelConfig` 编辑菜单新增「Teammate 模型」选项，支持修改或输入 `null` 清除为系统默认
+
 ## [1.0.5] - 2026-05-20
 
 ### Changed

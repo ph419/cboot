@@ -195,6 +195,7 @@ function New-SettingsTemplate {
         [string]$opusModel,
         [string]$sonnetModel,
         [string]$haikuModel,
+        [string]$teammateModel = $null,
         [int]$contextWindowSize = 1000000
     )
 
@@ -300,6 +301,19 @@ function New-SettingsTemplate {
         $template.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
     }
 
+    # teammate 配置（[string] 参数会将 $null 转为空字符串，需显式还原为 $null）
+    $teammateModelValue = if ([string]::IsNullOrWhiteSpace($teammateModel)) { $null } else { $teammateModel }
+    if ($template -is [hashtable]) {
+        # hashtable 类型：Add-Member 只添加 note property，ConvertTo-Json 不会序列化
+        # 必须通过 key 赋值才能写入 JSON
+        $template["teammateDefaultModel"] = $teammateModelValue
+        $template["teammateMode"] = "auto"
+    } else {
+        # PSCustomObject 类型：Add-Member -Force 可正确覆盖属性
+        $template | Add-Member -MemberType NoteProperty -Name "teammateDefaultModel" -Value $teammateModelValue -Force
+        $template | Add-Member -MemberType NoteProperty -Name "teammateMode" -Value "auto" -Force
+    }
+
     $template.model = $modelId
 
     # 5. 写入文件
@@ -322,8 +336,8 @@ function Initialize-Config {
     Write-Host "提示: 在输入步骤按回车（空行）可取消，项目路径步骤空行跳过" -ForegroundColor DarkGray
     Write-Host ""
 
-    # 步骤 1/6: 配置模型基础信息
-    Write-Host "步骤 1/6: 配置模型基础信息" -ForegroundColor Cyan
+    # 步骤 1/7: 配置模型基础信息
+    Write-Host "步骤 1/7: 配置模型基础信息" -ForegroundColor Cyan
     Write-Host ""
 
     $modelId = Read-HostWithCancel "请输入模型 ID（如 glm-5.1）"
@@ -352,8 +366,8 @@ function Initialize-Config {
     Write-Host "配置文件名: $configFile" -ForegroundColor Gray
     Write-Host ""
 
-    # 步骤 2/6: 配置 API 参数
-    Write-Host "步骤 2/6: 配置 API 参数" -ForegroundColor Cyan
+    # 步骤 2/7: 配置 API 参数
+    Write-Host "步骤 2/7: 配置 API 参数" -ForegroundColor Cyan
     Write-Host ""
 
     $authToken = Read-HostWithCancel "请输入 ANTHROPIC_AUTH_TOKEN（API 密钥）"
@@ -380,10 +394,17 @@ function Initialize-Config {
     $haikuModel = Read-HostWithCancel "请输入 ANTHROPIC_DEFAULT_HAIKU_MODEL" -defaultValue $modelId
     if ([string]::IsNullOrWhiteSpace($haikuModel)) { $haikuModel = $modelId }
 
+    # 步骤 3/7: Teammate 模型设置
+    Write-Host "步骤 3/7: Teammate 模型设置" -ForegroundColor Cyan
     Write-Host ""
 
-    # 步骤 3/6: 上下文窗口设置
-    Write-Host "步骤 3/6: 上下文窗口设置" -ForegroundColor Cyan
+    $teammateModel = Read-HostWithCancel "请输入 Teammate 默认模型（留空使用系统默认）"
+    if ([string]::IsNullOrWhiteSpace($teammateModel)) { $teammateModel = $null }
+
+    Write-Host ""
+
+    # 步骤 4/7: 上下文窗口设置
+    Write-Host "步骤 4/7: 上下文窗口设置" -ForegroundColor Cyan
     Write-Host ""
 
     $contextWindowSize = 0
@@ -408,8 +429,8 @@ function Initialize-Config {
 
     Write-Host ""
 
-    # 步骤 4/6: 默认权限
-    Write-Host "步骤 4/6: 默认权限" -ForegroundColor Cyan
+    # 步骤 5/7: 默认权限
+    Write-Host "步骤 5/7: 默认权限" -ForegroundColor Cyan
     Write-Host ""
 
     $defaultPermission = ""
@@ -425,8 +446,8 @@ function Initialize-Config {
     }
     Write-Host ""
 
-    # 步骤 5/6: 项目目录
-    Write-Host "步骤 5/6: 项目目录" -ForegroundColor Cyan
+    # 步骤 6/7: 项目目录
+    Write-Host "步骤 6/7: 项目目录" -ForegroundColor Cyan
     Write-Host ""
 
     $projectPath = Read-HostWithCancel "请输入项目目录路径（留空跳过）"
@@ -449,6 +470,7 @@ function Initialize-Config {
         Write-Host "  Opus 模型:    $opusModel" -ForegroundColor White
         Write-Host "  Sonnet 模型:  $sonnetModel" -ForegroundColor White
         Write-Host "  Haiku 模型:   $haikuModel" -ForegroundColor White
+        Write-Host "  Teammate 模型: $(if ($teammateModel) { $teammateModel } else { '系统默认' })" -ForegroundColor White
         Write-Host "  上下文窗口:   $contextWindowOriginal" -ForegroundColor White
         Write-Host ""
         Write-Host "  默认权限:     $(if ($defaultPermission -eq 'yes') { '允许所有操作' } else { '需要确认' })" -ForegroundColor White
@@ -499,8 +521,8 @@ function Initialize-Config {
         }
     }
 
-    # 步骤 6/6: 保存配置并生成模板
-    Write-Host "步骤 6/6: 保存配置" -ForegroundColor Cyan
+    # 步骤 7/7: 保存配置并生成模板
+    Write-Host "步骤 7/7: 保存配置" -ForegroundColor Cyan
     Write-Host ""
 
     # 保存配置文件
@@ -522,7 +544,7 @@ function Initialize-Config {
     $templateCreated = New-SettingsTemplate -modelId $modelId -configFile $configFile `
                                              -authToken $authToken -baseUrl $baseUrl `
                                              -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel `
-                                             -contextWindowSize $contextWindowSize
+                                             -teammateModel $teammateModel -contextWindowSize $contextWindowSize
 
     # 显示完成信息
     Clear-Host
@@ -1218,6 +1240,12 @@ function Add-Model {
         $haikuModel = $newModelId
     }
 
+    # 输入 TEAMMATE_MODEL（默认 = null，即使用系统默认）
+    $teammateModel = Read-HostWithCancel "输入 Teammate 默认模型（留空使用系统默认）"
+    if ([string]::IsNullOrWhiteSpace($teammateModel)) {
+        $teammateModel = $null
+    }
+
     # 输入上下文窗口大小
     Write-Host ""
     Write-Host "--- 配置上下文窗口 ---" -ForegroundColor Cyan
@@ -1253,7 +1281,7 @@ function Add-Model {
         $templateGenerated = New-SettingsTemplate -modelId $newModelId -configFile $newConfigFile `
                                                   -authToken $authToken -baseUrl $baseUrl `
                                                   -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel `
-                                                  -contextWindowSize $contextWindowSize
+                                                  -teammateModel $teammateModel -contextWindowSize $contextWindowSize
     } else {
         # 配置文件已存在，需要更新上下文窗口 env
         try {
@@ -1273,9 +1301,14 @@ function Add-Model {
                         $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW')
                     }
                 }
-                $settingsJson = $settings | ConvertTo-Json -Depth 10 | Format-Json
-                Set-Content -Path $fullConfigPath -Value $settingsJson -Encoding UTF8
             }
+
+            # 更新 teammate 配置（top-level 字段，不受 env 影响）
+            $settings | Add-Member -MemberType NoteProperty -Name "teammateDefaultModel" -Value $teammateModel -Force
+            $settings | Add-Member -MemberType NoteProperty -Name "teammateMode" -Value "auto" -Force
+
+            $settingsJson = $settings | ConvertTo-Json -Depth 10 | Format-Json
+            Set-Content -Path $fullConfigPath -Value $settingsJson -Encoding UTF8
         } catch {
             # 静默失败
         }
@@ -1504,6 +1537,7 @@ function Edit-ModelConfig {
                 $currentOpus = if ($settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL) { $settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL } else { "" }
                 $currentSonnet = if ($settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL) { $settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL } else { "" }
                 $currentHaiku = if ($settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) { $settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL } else { "" }
+                $currentTeammate = if ($settings.teammateDefaultModel) { $settings.teammateDefaultModel } else { "系统默认" }
                 $currentContext = if ($selectedModel.contextWindow) { $selectedModel.contextWindow } else { "1M" }
 
                 $fieldItems = @(
@@ -1512,6 +1546,7 @@ function Edit-ModelConfig {
                     "Opus 模型   : $currentOpus",
                     "Sonnet 模型  : $currentSonnet",
                     "Haiku 模型   : $currentHaiku",
+                    "Teammate 模型: $currentTeammate",
                     "上下文窗口   : $currentContext",
                     "返回"
                 )
@@ -1533,14 +1568,14 @@ function Edit-ModelConfig {
                 Write-Host ""
                 Write-Host "使用方向键导航，回车选择，ESC返回" -ForegroundColor Gray
 
-                $fieldSelectedIndex, $fieldSelected = Read-KeyInput -selectedIndex $fieldSelectedIndex -maxIndex 6
+                $fieldSelectedIndex, $fieldSelected = Read-KeyInput -selectedIndex $fieldSelectedIndex -maxIndex 7
 
                 if ($fieldSelected) {
                     if ($fieldSelectedIndex -eq -1) { # ESC - 返回第一级
                         break
                     }
 
-                    if ($fieldSelectedIndex -eq 6) { # 返回
+                    if ($fieldSelectedIndex -eq 7) { # 返回
                         break
                     }
 
@@ -1590,7 +1625,19 @@ function Edit-ModelConfig {
                                 $settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $newValue
                             }
                         }
-                        5 { # 上下文窗口
+                        5 { # Teammate 模型
+                            Write-Host "当前值: $currentTeammate" -ForegroundColor Cyan
+                            Write-Host ""
+                            $newValue = Read-Host "输入新值（留空保持不变，输入 null 清除为系统默认）"
+                            if (-not [string]::IsNullOrWhiteSpace($newValue)) {
+                                if ($newValue -eq "null") {
+                                    $settings | Add-Member -MemberType NoteProperty -Name "teammateDefaultModel" -Value $null -Force
+                                } else {
+                                    $settings | Add-Member -MemberType NoteProperty -Name "teammateDefaultModel" -Value $newValue -Force
+                                }
+                            }
+                        }
+                        6 { # 上下文窗口
                             Write-Host "当前值: $currentContext" -ForegroundColor Cyan
                             Write-Host ""
 
