@@ -14,11 +14,24 @@
 | WP-009-2-test | Teammate Model 配置测试用例 | - | ✅ 完成 | - | [docs/wp/WP-009-2-test.md](docs/wp/WP-009-2-test.md) |
 | WP-009-3-verify | Teammate Model 配置测试验证 | - | ✅ 完成 | - | [docs/wp/WP-009-3-verify.md](docs/wp/WP-009-3-verify.md) |
 | WP-009-4-review | Teammate Model 配置代码审查 | - | ✅ 完成 | - | [docs/wp/WP-009-4-review.md](docs/wp/WP-009-4-review.md) |
+| WP-010 | 修复 1M 上下文窗口新建模型残留 DISABLE_1M_CONTEXT/AUTO_COMPACT_WINDOW | P0 | ✅ 完成 | 25min | [docs/wp/WP-010.md](docs/wp/WP-010.md) |
+| WP-010-1-impl | 抽取 Set-ContextWindowEnv 辅助函数 | - | ✅ 完成 | - | [docs/wp/WP-010-1-impl.md](docs/wp/WP-010-1-impl.md) |
+| WP-010-2-impl | 三处调用替换 + 修复 1M 遗漏 bug | - | ✅ 完成 | - | [docs/wp/WP-010-2-impl.md](docs/wp/WP-010-2-impl.md) |
+| WP-010-3-test | 上下文窗口 env 逻辑独立测试脚本 | - | ✅ 完成 | - | [docs/wp/WP-010-3-test.md](docs/wp/WP-010-3-test.md) |
+| WP-010-4-verify | 测试验证 + 手动复现 | - | ✅ 完成 | - | [docs/wp/WP-010-4-verify.md](docs/wp/WP-010-4-verify.md) |
+| WP-010-5-review | 代码审查 + 版本号 v1.0.7 | - | ✅ 完成 | - | [docs/wp/WP-010-5-review.md](docs/wp/WP-010-5-review.md) |
+| WP-011 | 修复 1M 上下文窗口误删 CLAUDE_CODE_AUTO_COMPACT_WINDOW（WP-010 回归） | P0 | ✅ 完成 | 15min | [docs/wp/WP-011.md](docs/wp/WP-011.md) |
+| WP-011-1-impl | 修复 Set-ContextWindowEnv >=1M 分支 | - | ✅ 完成 | - | [docs/wp/WP-011-1-impl.md](docs/wp/WP-011-1-impl.md) |
+| WP-011-2-test | 修正测试脚本 4 个用例预期 | - | ✅ 完成 | - | [docs/wp/WP-011-2-test.md](docs/wp/WP-011-2-test.md) |
+| WP-011-3-verify | 测试 + 手动复现 1M/200K | - | ✅ 完成 | - | [docs/wp/WP-011-3-verify.md](docs/wp/WP-011-3-verify.md) |
+| WP-011-4-review | 代码审查 + 版本号 v1.0.8 | - | ✅ 完成 | - | [docs/wp/WP-011-4-review.md](docs/wp/WP-011-4-review.md) |
 
 ## ✅ 最近完成
 
 | 完成日期 | 工作包ID | 模块名称 | 说明 |
 |----------|----------|----------|------|
+| 2026-06-11 | WP-011 | 修复 1M 上下文窗口误删 AUTO_COMPACT_WINDOW（WP-010 回归） | 4 子包串行完成: impl → test → verify → review，修正 `Set-ContextWindowEnv` `>=1M` 分支（hashtable + PSCustomObject 两路径）由移除改为赋值 `AUTO_COMPACT_WINDOW=size`，修正测试脚本 4 用例预期，7 用例全 PASS，版本号 v1.0.8 |
+| 2026-06-11 | WP-010 | 修复 1M 上下文窗口新建模型残留字段 | 5 子包串行完成: impl → impl → test → verify → review，抽取 `Set-ContextWindowEnv` 统一三处逻辑，修复 New-SettingsTemplate 1M 场景未清除模板遗留字段，新增独立测试脚本 6 用例全 PASS，版本号 v1.0.7 |
 | 2026-06-03 | WP-009 | 支持 Default Teammate Model 配置 | 4 子包串行完成: impl → test → verify → review，cboot.ps1 + 4 示例文件，新增 teammateDefaultModel 配置支持 |
 | 2026-06-03 | WP-009-4-review | Teammate Model 配置代码审查 | 4 维度审查通过：代码风格一致性、功能正确性、兼容性、架构合规，无严重问题 |
 | 2026-06-03 | WP-009-3-verify | Teammate Model 配置测试验证 | 6 个测试用例全部通过，代码审查 + 语法检查 + JSON 验证，无回归问题 |

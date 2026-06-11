@@ -1,6 +1,6 @@
 # cboot
 
-[![Version](https://img.shields.io/badge/version-1.0.6-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.8-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个 PowerShell 版 Claude Code 交互式启动器，支持多模型切换、项目管理、权限控制和智能排序。
 
@@ -162,6 +162,14 @@ cboot/
 ```
 
 ## Changelog
+
+### v1.0.8 (2026-06-11)
+
+- 修复 `Set-ContextWindowEnv` 在 `>=1M` 上下文窗口场景下误删 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 字段的回归 bug（WP-010 矫枉过正），1M 场景该字段应设为 `1000000` 而非移除；`CLAUDE_CODE_DISABLE_1M_CONTEXT` 仍仅在 `<1M` 时设置
+
+### v1.0.7 (2026-06-11)
+
+- 修复 `New-SettingsTemplate` 在 1M 上下文窗口场景下未清除模板遗留的 `CLAUDE_CODE_DISABLE_1M_CONTEXT` / `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 字段的问题；抽取 `Set-ContextWindowEnv` 辅助函数统一 `New-SettingsTemplate` / `Add-Model` / `Edit-ModelConfig` 三处上下文窗口 env 逻辑
 
 ### v1.0.6 (2026-06-04)
 

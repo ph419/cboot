@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2026-06-11
+
+### Fixed
+
+- **1M 上下文窗口误删 CLAUDE_CODE_AUTO_COMPACT_WINDOW 字段（WP-010 回归修复）** — 修复 `Set-ContextWindowEnv` 的 `>=1M` 分支（WP-010 引入）将 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 一并移除的问题。该字段应始终等于上下文窗口大小，故 1M 场景现正确设为 `1000000`，仅在 `<1M` 时额外设置 `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`。修正 hashtable 与 PSCustomObject 两类型路径的 `>=1M` 分支，`<1M` 分支与 `DISABLE_1M_CONTEXT` 移除逻辑保持不变
+
+## [1.0.7] - 2026-06-11
+
+### Fixed
+
+- **1M 上下文窗口新建模型残留 DISABLE_1M_CONTEXT / AUTO_COMPACT_WINDOW** — 修复 `New-SettingsTemplate` 在用户填写 1M 上下文窗口、复用含 200K 残留字段的旧模板时，未清除模板遗留的 `CLAUDE_CODE_DISABLE_1M_CONTEXT` 与 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（导致出现 `200000` 残留值）的问题。`>=1M` 分支现正确移除两字段，且兼容 hashtable 与 PSCustomObject 两种模板类型
+
+### Changed
+
+- **抽取 `Set-ContextWindowEnv` 辅助函数** — 将 `New-SettingsTemplate` / `Add-Model` / `Edit-ModelConfig` 三处重复的上下文窗口 env 设置/移除逻辑统一抽取为 `Set-ContextWindowEnv`，既修复 `New-SettingsTemplate` 的遗漏，又消除三处重复逻辑，防止后续新增调用点时再次遗漏
+
 ## [1.0.6] - 2026-06-04
 
 ### Added

@@ -185,6 +185,36 @@ function Parse-ContextWindow {
     return $null
 }
 
+# 按上下文窗口大小设置/移除 1M 相关 env 字段（兼容 hashtable 与 PSCustomObject）
+function Set-ContextWindowEnv {
+    param(
+        [object]$EnvObject,
+        [int]$ContextWindowSize
+    )
+
+    if ($EnvObject -is [hashtable]) {
+        # hashtable 类型：通过 key 索引赋值，Remove 移除
+        if ($ContextWindowSize -lt 1000000) {
+            $EnvObject['CLAUDE_CODE_DISABLE_1M_CONTEXT'] = "1"
+            $EnvObject['CLAUDE_CODE_AUTO_COMPACT_WINDOW'] = "$ContextWindowSize"
+        } else {
+            $EnvObject.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT') | Out-Null
+            $EnvObject['CLAUDE_CODE_AUTO_COMPACT_WINDOW'] = "$ContextWindowSize"
+        }
+    } else {
+        # PSCustomObject 类型：Add-Member -Force 覆盖属性，PSObject.Properties 判存在后 Remove
+        if ($ContextWindowSize -lt 1000000) {
+            $EnvObject | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_DISABLE_1M_CONTEXT' -Value "1" -Force
+            $EnvObject | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' -Value "$ContextWindowSize" -Force
+        } else {
+            if ($EnvObject.PSObject.Properties['CLAUDE_CODE_DISABLE_1M_CONTEXT']) {
+                $EnvObject.PSObject.Properties.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT')
+            }
+            $EnvObject | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' -Value "$ContextWindowSize" -Force
+        }
+    }
+}
+
 # 生成 settings 模板文件
 function New-SettingsTemplate {
     param(
@@ -294,12 +324,8 @@ function New-SettingsTemplate {
     $template.env.ANTHROPIC_DEFAULT_SONNET_MODEL = $sonnetModel
     $template.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $haikuModel
 
-    # 上下文窗口设置
-    if ($contextWindowSize -lt 1000000) {
-        $template.env.CLAUDE_CODE_DISABLE_1M_CONTEXT = "1"
-        $compactWindow = $contextWindowSize
-        $template.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = "$compactWindow"
-    }
+    # 上下文窗口设置（>=1M 时清除模板可能遗留的字段）
+    Set-ContextWindowEnv -EnvObject $template.env -ContextWindowSize $contextWindowSize
 
     # teammate 配置（[string] 参数会将 $null 转为空字符串，需显式还原为 $null）
     $teammateModelValue = if ([string]::IsNullOrWhiteSpace($teammateModel)) { $null } else { $teammateModel }
@@ -1288,19 +1314,7 @@ function Add-Model {
             $settingsContent = Get-Content $fullConfigPath -Raw -Encoding UTF8
             $settings = $settingsContent | ConvertFrom-Json
             if ($settings.env) {
-                if ($contextWindowSize -lt 1000000) {
-                    $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_DISABLE_1M_CONTEXT' -Value "1" -Force
-                    $compactWindow = $contextWindowSize
-                    $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' -Value "$compactWindow" -Force
-                } else {
-                    # 移除上下文窗口相关的 env（如果存在）
-                    if ($settings.env.PSObject.Properties['CLAUDE_CODE_DISABLE_1M_CONTEXT']) {
-                        $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT')
-                    }
-                    if ($settings.env.PSObject.Properties['CLAUDE_CODE_AUTO_COMPACT_WINDOW']) {
-                        $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW')
-                    }
-                }
+                Set-ContextWindowEnv -EnvObject $settings.env -ContextWindowSize $contextWindowSize
             }
 
             # 更新 teammate 配置（top-level 字段，不受 env 影响）
@@ -1663,19 +1677,7 @@ function Edit-ModelConfig {
 
                             if ($newContextSize -ne -1) {
                                 # 更新 settings env
-                                if ($newContextSize -lt 1000000) {
-                                    $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_DISABLE_1M_CONTEXT' -Value "1" -Force
-                                    $compactWindow = $newContextSize
-                                    $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' -Value "$compactWindow" -Force
-                                } else {
-                                    # 移除上下文窗口相关的 env（如果存在）
-                                    if ($settings.env.PSObject.Properties['CLAUDE_CODE_DISABLE_1M_CONTEXT']) {
-                                        $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT')
-                                    }
-                                    if ($settings.env.PSObject.Properties['CLAUDE_CODE_AUTO_COMPACT_WINDOW']) {
-                                        $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW')
-                                    }
-                                }
+                                Set-ContextWindowEnv -EnvObject $settings.env -ContextWindowSize $newContextSize
 
                                 # 同步更新 claude-config.json 中的 contextWindow
                                 $config = Get-Config
