@@ -1,4 +1,4 @@
-﻿# ============================================
+# ============================================
 # 🔧 可配置项 - 在这里修改你的配置路径
 # ============================================
 # 默认使用用户目录下的 .claude 目录
@@ -73,7 +73,7 @@ function Read-KeyInput {
 # 读取配置
 function Get-Config {
     try {
-        $configContent = Get-Content $configPath -Raw -Encoding UTF8
+        $configContent = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8
         return ConvertFrom-Json $configContent
     } catch {
         return $null
@@ -85,7 +85,7 @@ function Save-Config {
     param($config)
     try {
         $configJson = $config | ConvertTo-Json -Depth 10 | Format-Json
-        Set-Content -Path $configPath -Value $configJson -Encoding UTF8
+        Set-Content -LiteralPath $configPath -Value $configJson -Encoding UTF8
     } catch {
         # 静默失败
     }
@@ -96,17 +96,17 @@ function Remove-ConfigAndSettings {
     param([string]$configFilePath)
     $cfg = $null
     try {
-        $cfg = Get-Content $configFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $cfg = Get-Content -LiteralPath $configFilePath -Raw -Encoding UTF8 | ConvertFrom-Json
     } catch {}
     if ($cfg -and $cfg.models) {
         foreach ($m in $cfg.models) {
             if ($m.configFile) {
                 $settingsPath = Join-Path $CONFIG_DIR $m.configFile
-                Remove-Item $settingsPath -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $settingsPath -Force -ErrorAction SilentlyContinue
             }
         }
     }
-    Remove-Item $configFilePath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $configFilePath -Force -ErrorAction SilentlyContinue
 }
 
 # 自定义输入函数：支持空行取消（返回 $null 表示取消）
@@ -241,9 +241,9 @@ function New-SettingsTemplate {
     }
 
     # 2. 读取模板或使用硬编码模板
-    if ($templatePath -and (Test-Path $templatePath)) {
+    if ($templatePath -and (Test-Path -LiteralPath $templatePath)) {
         try {
-            $templateContent = Get-Content $templatePath -Raw -Encoding UTF8
+            $templateContent = Get-Content -LiteralPath $templatePath -Raw -Encoding UTF8
             $template = $templateContent | ConvertFrom-Json
         } catch {
             # 模板读取失败，fallback 到硬编码
@@ -345,7 +345,7 @@ function New-SettingsTemplate {
     # 5. 写入文件
     try {
         $templateJson = $template | ConvertTo-Json -Depth 10 | Format-Json
-        Set-Content -Path $settingsPath -Value $templateJson -Encoding UTF8
+        Set-Content -LiteralPath $settingsPath -Value $templateJson -Encoding UTF8
         return $true
     } catch {
         return $false
@@ -366,22 +366,22 @@ function Initialize-Config {
     Write-Host "步骤 1/7: 配置模型基础信息" -ForegroundColor Cyan
     Write-Host ""
 
-    $modelId = Read-HostWithCancel "请输入模型 ID（如 glm-5.1）"
+    $modelId = Read-HostWithCancel "请输入模型 ID（如 glm-5.2[1m]）"
     if ([string]::IsNullOrWhiteSpace($modelId)) {
         if (Confirm-Cancel) { return }
         while ([string]::IsNullOrWhiteSpace($modelId)) {
-            $modelId = Read-Host "请输入模型 ID（如 glm-5.1）"
+            $modelId = Read-Host "请输入模型 ID（如 glm-5.2[1m]）"
             if ([string]::IsNullOrWhiteSpace($modelId)) {
                 Write-Host "模型 ID 不能为空!" -ForegroundColor Red
             }
         }
     }
 
-    $modelName = Read-HostWithCancel "请输入模型显示名称（如 GLM-5.1）"
+    $modelName = Read-HostWithCancel "请输入模型显示名称（如 glm-5.2[1m]）"
     if ([string]::IsNullOrWhiteSpace($modelName)) {
         if (Confirm-Cancel) { return }
         while ([string]::IsNullOrWhiteSpace($modelName)) {
-            $modelName = Read-Host "请输入模型显示名称（如 GLM-5.1）"
+            $modelName = Read-Host "请输入模型显示名称（如 glm-5.2[1m]）"
             if ([string]::IsNullOrWhiteSpace($modelName)) {
                 Write-Host "模型显示名称不能为空!" -ForegroundColor Red
             }
@@ -537,7 +537,7 @@ function Initialize-Config {
 
     # 如果提供了项目路径，添加到配置
     if (-not [string]::IsNullOrWhiteSpace($projectPath)) {
-        if (Test-Path $projectPath -PathType Container) {
+        if (Test-Path -LiteralPath $projectPath -PathType Container) {
             $newConfig.projects += @{
                 path = $projectPath
                 usageCount = 0
@@ -554,7 +554,7 @@ function Initialize-Config {
     # 保存配置文件
     try {
         $configJson = $newConfig | ConvertTo-Json -Depth 10 | Format-Json
-        Set-Content -Path $configPath -Value $configJson -Encoding UTF8
+        Set-Content -LiteralPath $configPath -Value $configJson -Encoding UTF8
     } catch {
         Clear-Host
         Write-Host "=== 配置错误 ===" -ForegroundColor Red
@@ -589,7 +589,7 @@ function Initialize-Config {
 
 # 配置加载与验证循环（缺失字段可逐项修复）
 while ($true) {
-    if (-not (Test-Path $configPath)) {
+    if (-not (Test-Path -LiteralPath $configPath)) {
         Initialize-Config
     }
 
@@ -759,7 +759,7 @@ while ($true) {
             }
             # 验证文件存在性
             $vPath = Join-Path $CONFIG_DIR $v
-            if (-not (Test-Path $vPath -PathType Leaf)) {
+            if (-not (Test-Path -LiteralPath $vPath -PathType Leaf)) {
                 $vi = 0
                 $viSelected = $false
                 while (-not $viSelected) {
@@ -929,7 +929,7 @@ function Get-SortedProjects {
 
     foreach ($p in $config.projects) {
         $path = if ($p -is [string]) { $p } else { $p.path }
-        if (Test-Path $path -PathType Container) {
+        if (Test-Path -LiteralPath $path -PathType Container) {
             if ($p -is [string]) {
                 $validProjects += @{ path = $p; usageCount = 0 }
             } else {
@@ -1158,14 +1158,14 @@ function Add-Model {
     Write-Host ""
 
     # 输入模型 ID（空行取消）
-    $newModelId = Read-HostWithCancel "输入模型 ID（如 glm-5.1）"
+    $newModelId = Read-HostWithCancel "输入模型 ID（如 glm-5.2[1m]）"
     if ([string]::IsNullOrWhiteSpace($newModelId)) {
         if (Confirm-Cancel) {
             return
         }
         # 用户选择不取消，继续输入
         while ([string]::IsNullOrWhiteSpace($newModelId)) {
-            $newModelId = Read-Host "输入模型 ID（如 glm-5.1）"
+            $newModelId = Read-Host "输入模型 ID（如 glm-5.2[1m]）"
             if ([string]::IsNullOrWhiteSpace($newModelId)) {
                 Write-Host "模型 ID 不能为空!" -ForegroundColor Red
             }
@@ -1191,13 +1191,13 @@ function Add-Model {
     }
 
     # 输入模型名称（空行取消）
-    $newModelName = Read-HostWithCancel "输入模型显示名称（如 GLM-5.1）"
+    $newModelName = Read-HostWithCancel "输入模型显示名称（如 glm-5.2[1m]）"
     if ([string]::IsNullOrWhiteSpace($newModelName)) {
         if (Confirm-Cancel) {
             return
         }
         while ([string]::IsNullOrWhiteSpace($newModelName)) {
-            $newModelName = Read-Host "输入模型显示名称（如 GLM-5.1）"
+            $newModelName = Read-Host "输入模型显示名称（如 glm-5.2[1m]）"
             if ([string]::IsNullOrWhiteSpace($newModelName)) {
                 Write-Host "模型显示名称不能为空!" -ForegroundColor Red
             }
@@ -1301,7 +1301,7 @@ function Add-Model {
     $fullConfigPath = Join-Path $CONFIG_DIR $newConfigFile
     $templateGenerated = $false
 
-    if (-not (Test-Path $fullConfigPath)) {
+    if (-not (Test-Path -LiteralPath $fullConfigPath)) {
         Write-Host ""
         Write-Host "配置文件不存在，正在生成模板..." -ForegroundColor Yellow
         $templateGenerated = New-SettingsTemplate -modelId $newModelId -configFile $newConfigFile `
@@ -1311,7 +1311,7 @@ function Add-Model {
     } else {
         # 配置文件已存在，需要更新上下文窗口 env
         try {
-            $settingsContent = Get-Content $fullConfigPath -Raw -Encoding UTF8
+            $settingsContent = Get-Content -LiteralPath $fullConfigPath -Raw -Encoding UTF8
             $settings = $settingsContent | ConvertFrom-Json
             if ($settings.env) {
                 Set-ContextWindowEnv -EnvObject $settings.env -ContextWindowSize $contextWindowSize
@@ -1322,7 +1322,7 @@ function Add-Model {
             $settings | Add-Member -MemberType NoteProperty -Name "teammateMode" -Value "auto" -Force
 
             $settingsJson = $settings | ConvertTo-Json -Depth 10 | Format-Json
-            Set-Content -Path $fullConfigPath -Value $settingsJson -Encoding UTF8
+            Set-Content -LiteralPath $fullConfigPath -Value $settingsJson -Encoding UTF8
         } catch {
             # 静默失败
         }
@@ -1507,9 +1507,9 @@ function Edit-ModelConfig {
             # 读取 settings 文件
             $settingsPath = Join-Path $CONFIG_DIR $configFile
             $settings = $null
-            if (Test-Path $settingsPath) {
+            if (Test-Path -LiteralPath $settingsPath) {
                 try {
-                    $settingsContent = Get-Content $settingsPath -Raw -Encoding UTF8
+                    $settingsContent = Get-Content -LiteralPath $settingsPath -Raw -Encoding UTF8
                     $settings = $settingsContent | ConvertFrom-Json
                 } catch {
                     Clear-Host
@@ -1695,7 +1695,7 @@ function Edit-ModelConfig {
                     # 保存 settings 文件
                     try {
                         $settingsJson = $settings | ConvertTo-Json -Depth 10 | Format-Json
-                        Set-Content -Path $settingsPath -Value $settingsJson -Encoding UTF8
+                        Set-Content -LiteralPath $settingsPath -Value $settingsJson -Encoding UTF8
 
                         Clear-Host
                         Write-Host "✅ 配置已保存!" -ForegroundColor Green
@@ -1744,7 +1744,7 @@ function Add-ProjectDirectory {
         return
     }
 
-    if (Test-Path $newPath -PathType Container) {
+    if (Test-Path -LiteralPath $newPath -PathType Container) {
         # 检查是否已存在
         $exists = $false
         foreach ($p in $config.projects) {
@@ -1878,7 +1878,7 @@ function Start-Claude {
     param($projectPath, $noConfirm, $configFile)
 
     # 检查项目目录是否存在
-    if (-not (Test-Path $projectPath -PathType Container)) {
+    if (-not (Test-Path -LiteralPath $projectPath -PathType Container)) {
         Write-Host "项目目录不存在!" -ForegroundColor Red
         Start-Sleep -Seconds 2
         return
@@ -1889,7 +1889,7 @@ function Start-Claude {
     $fullConfigPath = Join-Path $claudeConfigPath $configFile
 
     # 检查配置文件是否存在
-    if (-not (Test-Path $fullConfigPath)) {
+    if (-not (Test-Path -LiteralPath $fullConfigPath)) {
         Write-Host "配置文件不存在: $fullConfigPath" -ForegroundColor Red
         Write-Host "请确保配置文件已正确创建。" -ForegroundColor Yellow
         Start-Sleep -Seconds 2

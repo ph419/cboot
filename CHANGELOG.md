@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.9] - 2026-06-13
+
+### Added
+
+- **glm-5.2 模型配置模板** — 新增 `config/settings/settings-glm-5.2.example.json`，`ANTHROPIC_DEFAULT_SONNET_MODEL` / `OPUS_MODEL` 设为 `glm-5.2[1m]`、`HAIKU_MODEL` 设为 `glm-4.5-air`、`CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000`，开启 GLM 1M 上下文窗口，供初始化与添加模型时直接选用
+
+### Changed
+
+- **README 配置示例升级为 glm-5.2[1m]** — `claude-config.json` 与 `settings-*.json` 示例由 glm-5.1 更新为 glm-5.2[1m]；新增 GLM 1M 上下文窗口（`[1m]` 后缀 + `CLAUDE_CODE_AUTO_COMPACT_WINDOW`）与 `/effort` 思考强度切换说明；项目结构与模板列表补列 glm-5.2 模板
+
+### Fixed
+
+- **路径参数统一改用 `-LiteralPath`** — `cboot.ps1` 中全部 `Test-Path` / `Get-Content` / `Set-Content` / `Remove-Item` 路径参数改用 `-LiteralPath`（约 18 处），防止配置/项目路径含特殊字符（方括号 `[]`、空格）被 PowerShell 当通配符解析导致命令失败
+- **移除 cboot.ps1 文件开头 UTF-8 BOM**
+
 ## [1.0.8] - 2026-06-11
 
 ### Fixed

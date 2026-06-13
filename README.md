@@ -1,6 +1,6 @@
 # cboot
 
-[![Version](https://img.shields.io/badge/version-1.0.8-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.9-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个 PowerShell 版 Claude Code 交互式启动器，支持多模型切换、项目管理、权限控制和智能排序。
 
@@ -71,9 +71,9 @@ cd cboot
 
 ![配置确认](docs/2.png)
 
-**配置文件生成成功**
 
-![配置完成](docs/3.png)
+
+
 
 ## 配置说明
 
@@ -85,13 +85,13 @@ cd cboot
 {
     "models": [
         {
-            "id": "glm-5.1",
-            "name": "GLM-5.1",
-            "configFile": "settings-glm-5.1.json",
+            "id": "glm-5.2[1m]",
+            "name": "glm-5.2[1m]",
+            "configFile": "settings-glm-5.2[1m].json",
             "usageCount": 0
         }
     ],
-    "defaultModel": "glm-5.1",
+    "defaultModel": "glm-5.2[1m]",
     "defaultPermission": "yes",
     "projects": [
         {
@@ -118,9 +118,10 @@ cd cboot
     "env": {
         "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
         "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
-        "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.1",
-        "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.1",
-        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-4.5-air"
+        "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "1000000",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-4.5-air",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.2[1m]",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.2[1m]"
     }
 }
 ```
@@ -129,7 +130,22 @@ cd cboot
 |------|------|
 | `ANTHROPIC_AUTH_TOKEN` | API 密钥（必须替换） |
 | `ANTHROPIC_BASE_URL` | API 地址 |
-| `ANTHROPIC_DEFAULT_*_MODEL` | 模型映射 |
+| `ANTHROPIC_DEFAULT_*_MODEL` | 模型映射，模型名加 `[1m]` 后缀（如 `glm-5.2[1m]`）开启 GLM 1M 上下文 |
+| `CLAUDE_CODE_AUTO_COMPACT_WINDOW` | 上下文自动压缩窗口，开启 1M 时设为 `1000000` |
+
+#### GLM 1M 上下文与 effort 切换
+
+GLM-5.2 支持通过模型名后缀开启 1M 上下文窗口，并可在会话中切换思考强度：
+
+- **1M 上下文**：模型名加 `[1m]` 后缀（即 `glm-5.2[1m]`）开启 GLM 1M 上下文，需同时设置 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000`。在 cboot 初始化或添加模型时，将上下文窗口填写为 `1M`，会自动配置这两项。
+- **effort 思考强度**：Claude Code 会话中输入 `/effort` 切换思考强度，映射关系如下：
+
+| Claude Code 中的 effort | GLM-5.2 实际映射 |
+|---|---|
+| low / medium / high（默认） | high |
+| xhigh / max / ultracode | max |
+
+> 💡 Coding 任务推荐切换至 `max` effort，以获取更深度的推理与更稳定的复杂任务表现。
 
 ## 快捷键
 
@@ -149,6 +165,7 @@ cboot/
 ├── config/
 │   ├── claude-config.example.json # 启动器配置示例
 │   └── settings/                  # 模型配置示例
+│       ├── settings-glm-5.2.example.json
 │       ├── settings-glm-5.1.example.json
 │       ├── settings-glm.example.json
 │       ├── settings-glm-5-turbo.example.json
@@ -162,6 +179,13 @@ cboot/
 ```
 
 ## Changelog
+
+### v1.0.9 (2026-06-13)
+
+- 新增 glm-5.2 配置模板（`glm-5.2[1m]` + 1M 上下文窗口 `CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000`）
+- README 配置示例升级为 glm-5.2[1m]，补充 GLM 1M 上下文与 `/effort` 思考强度说明
+- 修复：`cboot.ps1` 路径参数统一改用 `-LiteralPath`，防止含特殊字符（方括号、空格）的路径解析失败
+- 修复：移除 `cboot.ps1` 文件开头 UTF-8 BOM
 
 ### v1.0.8 (2026-06-11)
 
