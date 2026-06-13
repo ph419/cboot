@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **glm-5.2 模型配置模板** — 新增 `config/settings/settings-glm-5.2.example.json`，`ANTHROPIC_DEFAULT_SONNET_MODEL` / `OPUS_MODEL` 设为 `glm-5.2[1m]`、`HAIKU_MODEL` 设为 `glm-4.5-air`、`CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000`，开启 GLM 1M 上下文窗口，供初始化与添加模型时直接选用
+- **glm-5.2 模型配置模板** — 新增 `config/settings/settings-glm-5.2[1m].example.json`，`ANTHROPIC_DEFAULT_SONNET_MODEL` / `OPUS_MODEL` 设为 `glm-5.2[1m]`、`HAIKU_MODEL` 设为 `glm-4.5-air`、`CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000`，开启 GLM 1M 上下文窗口，供初始化与添加模型时直接选用
 
 ### Changed
 

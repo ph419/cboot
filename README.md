@@ -165,15 +165,14 @@ cboot/
 ├── config/
 │   ├── claude-config.example.json # 启动器配置示例
 │   └── settings/                  # 模型配置示例
-│       ├── settings-glm-5.2.example.json
+│       ├── settings-glm-5.2[1m].example.json
 │       ├── settings-glm-5.1.example.json
 │       ├── settings-glm.example.json
 │       ├── settings-glm-5-turbo.example.json
 │       └── settings-glm-5v-turbo.example.json
 ├── docs/                          # 使用截图
 │   ├── 1.png
-│   ├── 2.png
-│   └── 3.png
+│   └── 2.png
 ├── README.md
 └── LICENSE
 ```
