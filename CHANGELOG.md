@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.10] - 2026-06-15
+
+### Fixed
+
+- **cboot.ps1 编码恢复为 UTF-8 with BOM** — v1.0.9 误将 `cboot.ps1` 改为 UTF-8 无 BOM，导致 Windows PowerShell 5.1（双击 `cboot.cmd` / `powershell.exe` 默认环境）对无 BOM 的 `.ps1` 按系统 ANSI 代码页（中文系统为 GBK/CP936）解码，中文 UTF-8 字节中的 `0x22`/`0x7D`/`0x29` 等被 GBK 解码后打乱字符串终止符与大括号配对，触发 37 条 AST 解析错误（Line 356/357/370/372 等），脚本根本未能解析、PowerShell 立即退出，表现为窗口一闪而过。现已恢复为 UTF-8 with BOM（首字节 `EF BB BF`），PS 5.1 AST 解析 0 错误、PS 7 无回归。内容除新增 3 字节 BOM 外逐字节不变（与 v1.0.9 文本完全一致）
+
 ## [1.0.9] - 2026-06-13
 
 ### Added

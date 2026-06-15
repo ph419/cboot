@@ -25,11 +25,16 @@
 | WP-011-2-test | 修正测试脚本 4 个用例预期 | - | ✅ 完成 | - | [docs/wp/WP-011-2-test.md](docs/wp/WP-011-2-test.md) |
 | WP-011-3-verify | 测试 + 手动复现 1M/200K | - | ✅ 完成 | - | [docs/wp/WP-011-3-verify.md](docs/wp/WP-011-3-verify.md) |
 | WP-011-4-review | 代码审查 + 版本号 v1.0.8 | - | ✅ 完成 | - | [docs/wp/WP-011-4-review.md](docs/wp/WP-011-4-review.md) |
+| WP-012 | 修复 cboot.ps1 编码（UTF-8 无 BOM → with BOM），解决 PS5.1 一闪而过 | P0 | ✅ 完成 | 10min | [docs/wp/WP-012.md](docs/wp/WP-012.md) |
+| WP-012-1-impl | 转换 cboot.ps1 为 UTF-8 with BOM | - | ✅ 完成 | - | [docs/wp/WP-012-1-impl.md](docs/wp/WP-012-1-impl.md) |
+| WP-012-2-verify | 多环境编码验证（BOM/PS5.1/PS7/启动/全项目扫描） | - | ✅ 完成 | - | [docs/wp/WP-012-2-verify.md](docs/wp/WP-012-2-verify.md) |
+| WP-012-3-review | 代码审查 + 版本号 v1.0.10 + CHANGELOG + 连带排查 | - | ✅ 完成 | - | [docs/wp/WP-012-3-review.md](docs/wp/WP-012-3-review.md) |
 
 ## ✅ 最近完成
 
 | 完成日期 | 工作包ID | 模块名称 | 说明 |
 |----------|----------|----------|------|
+| 2026-06-15 | WP-012 | 修复 cboot.ps1 编码（PS5.1 一闪而过） | 3 子包串行完成: impl → verify → review，cboot.ps1 由 UTF-8 无 BOM 恢复为 with BOM（EF BB BF），PS 5.1 AST 解析 37 错误→0、PS 7 无回归，双击 cboot.cmd 不再一闪而过（根因：v1.0.9 误移 BOM）；全项目 .ps1 均有 BOM 无隐患，版本号 v1.0.10，CLAUDE.md 新增「编码规范」 |
 | 2026-06-11 | WP-011 | 修复 1M 上下文窗口误删 AUTO_COMPACT_WINDOW（WP-010 回归） | 4 子包串行完成: impl → test → verify → review，修正 `Set-ContextWindowEnv` `>=1M` 分支（hashtable + PSCustomObject 两路径）由移除改为赋值 `AUTO_COMPACT_WINDOW=size`，修正测试脚本 4 用例预期，7 用例全 PASS，版本号 v1.0.8 |
 | 2026-06-11 | WP-010 | 修复 1M 上下文窗口新建模型残留字段 | 5 子包串行完成: impl → impl → test → verify → review，抽取 `Set-ContextWindowEnv` 统一三处逻辑，修复 New-SettingsTemplate 1M 场景未清除模板遗留字段，新增独立测试脚本 6 用例全 PASS，版本号 v1.0.7 |
 | 2026-06-03 | WP-009 | 支持 Default Teammate Model 配置 | 4 子包串行完成: impl → test → verify → review，cboot.ps1 + 4 示例文件，新增 teammateDefaultModel 配置支持 |

@@ -1,6 +1,6 @@
 # cboot
 
-[![Version](https://img.shields.io/badge/version-1.0.9-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.10-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个 PowerShell 版 Claude Code 交互式启动器，支持多模型切换、项目管理、权限控制和智能排序。
 
@@ -178,6 +178,10 @@ cboot/
 ```
 
 ## Changelog
+
+### v1.0.10 (2026-06-15)
+
+- 修复：`cboot.ps1` 编码恢复为 **UTF-8 with BOM**（v1.0.9 误将其改为 UTF-8 无 BOM），解决 Windows PowerShell 5.1 下中文按 GBK 解码导致引号/大括号配对错乱、脚本解析失败（37 条 AST 错误）、双击 `cboot.cmd` 一闪而过的问题。PowerShell 5.1 对无 BOM 的 `.ps1` 按 ANSI（GBK）解码，含中文的脚本必须存为 UTF-8 with BOM 才能兼容 PS 5.1 与 PS 7
 
 ### v1.0.9 (2026-06-13)
 
