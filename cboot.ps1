@@ -324,6 +324,13 @@ function New-SettingsTemplate {
     $template.env.ANTHROPIC_DEFAULT_SONNET_MODEL = $sonnetModel
     $template.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $haikuModel
 
+    # 套餐标记：statusline 的 custom-command widget 读取此变量显示当前窗口的配置身份
+    if ($template.env -is [hashtable]) {
+        $template.env['CLAUDE_PROFILE'] = $modelId
+    } else {
+        $template.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_PROFILE' -Value $modelId -Force
+    }
+
     # 上下文窗口设置（>=1M 时清除模板可能遗留的字段）
     Set-ContextWindowEnv -EnvObject $template.env -ContextWindowSize $contextWindowSize
 
@@ -1315,6 +1322,7 @@ function Add-Model {
             $settings = $settingsContent | ConvertFrom-Json
             if ($settings.env) {
                 Set-ContextWindowEnv -EnvObject $settings.env -ContextWindowSize $contextWindowSize
+                $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_PROFILE' -Value $newModelId -Force
             }
 
             # 更新 teammate 配置（top-level 字段，不受 env 影响）

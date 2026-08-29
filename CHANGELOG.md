@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.11] - 2026-08-29
+
+### Added
+
+- **套餐标记 `CLAUDE_PROFILE` 自动写入** — `New-SettingsTemplate`（新建配置模板）与 `Add-Model`（配置文件已存在的更新分支）现在自动将条目 id 写入 settings 的 `env.CLAUDE_PROFILE`。配合 ccstatusline 的 `custom-command` widget（`node -e "process.stdout.write(process.env.CLAUDE_PROFILE||'')"`）可在 statusline 常驻显示当前窗口启动时所选的套餐，解决多套餐共用同一主模型名（如 `glm-5.3[1m]` 与其 max 套餐）时无法区分的问题；未写入该变量的配置（如裸启动的默认 settings.json）标签段自动隐藏。注意：模板从现有 settings 文件读入时为 PSCustomObject，对不存在属性直接赋值会抛错，故按 `Set-ContextWindowEnv` 同款双分支写法（hashtable 索引 / `Add-Member -Force`）
+
 ## [1.0.10] - 2026-06-15
 
 ### Fixed

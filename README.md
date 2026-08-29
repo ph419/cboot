@@ -1,6 +1,6 @@
 # cboot
 
-[![Version](https://img.shields.io/badge/version-1.0.10-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.11-blue)](https://github.com/ph419/cboot) [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 一个 PowerShell 版 Claude Code 交互式启动器，支持多模型切换、项目管理、权限控制和智能排序。
 
@@ -178,6 +178,10 @@ cboot/
 ```
 
 ## Changelog
+
+### v1.0.11 (2026-08-29)
+
+- 新增：套餐标记 `CLAUDE_PROFILE` 自动写入 — `New-SettingsTemplate`（新建配置模板）与 `Add-Model`（配置文件已存在的更新分支）自动将条目 id 写入 settings 的 `env.CLAUDE_PROFILE`。配合 ccstatusline 的 `custom-command` widget 可在 statusline 常驻显示当前窗口启动时所选的套餐，解决多套餐共用同一主模型名（如 `glm-5.3[1m]` 与其 max 套餐）时无法区分的问题
 
 ### v1.0.10 (2026-06-15)
 
