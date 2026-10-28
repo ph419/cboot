@@ -11,6 +11,20 @@ $CONFIG_DIR = $CUSTOM_CONFIG_DIR
 
 $configPath = Join-Path $CONFIG_DIR "claude-config.json"
 
+# CLI 参数直启（-Model/-Project/-Permission 跳过菜单；cboot.cmd 的 %* 经 $args 端到端透传）
+$script:DirectLaunchArgs = $null
+if ($args.Count -gt 0) {
+    $dl = @{ model = $null; project = $null; permission = $null }
+    for ($i = 0; $i -lt $args.Count; $i++) {
+        $a = [string]$args[$i]
+        if ($a -ieq '-Model') { $i++; if ($i -lt $args.Count) { $dl.model = [string]$args[$i] } }
+        elseif ($a -ieq '-Project') { $i++; if ($i -lt $args.Count) { $dl.project = [string]$args[$i] } }
+        elseif ($a -ieq '-Permission') { $i++; if ($i -lt $args.Count) { $dl.permission = [string]$args[$i] } }
+        else { Write-Warning "未知参数: $a（支持 -Model/-Project/-Permission）" }
+    }
+    $script:DirectLaunchArgs = $dl
+}
+
 # 格式化 JSON：2 空格缩进，冒号后单空格
 function Format-Json {
     [CmdletBinding()]
@@ -186,6 +200,10 @@ function Parse-ContextWindow {
 }
 
 # 按上下文窗口大小设置/移除 1M 相关 env 字段（兼容 hashtable 与 PSCustomObject）
+# 语义（2026-10-28 验证记录，见 docs/reports）：
+#   - CLAUDE_CODE_DISABLE_1M_CONTEXT=1 会把 1M 原生模型的有效窗口压回 200K，并与 AUTO_COMPACT_WINDOW 组合出「窗口 200K 而压缩阈值 500K」的矛盾配置
+#   - 仅当用户显式选择 200K 时写 DISABLE_1M_CONTEXT 并清除 AUTO_COMPACT_WINDOW（压缩阈值交回默认逻辑）
+#   - 其余窗口只写 AUTO_COMPACT_WINDOW=size（压缩阈值=窗口大小，1M 能力保留）
 function Set-ContextWindowEnv {
     param(
         [object]$EnvObject,
@@ -194,18 +212,20 @@ function Set-ContextWindowEnv {
 
     if ($EnvObject -is [hashtable]) {
         # hashtable 类型：通过 key 索引赋值，Remove 移除
-        if ($ContextWindowSize -lt 1000000) {
+        if ($ContextWindowSize -eq 200000) {
             $EnvObject['CLAUDE_CODE_DISABLE_1M_CONTEXT'] = "1"
-            $EnvObject['CLAUDE_CODE_AUTO_COMPACT_WINDOW'] = "$ContextWindowSize"
+            $EnvObject.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW') | Out-Null
         } else {
             $EnvObject.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT') | Out-Null
             $EnvObject['CLAUDE_CODE_AUTO_COMPACT_WINDOW'] = "$ContextWindowSize"
         }
     } else {
         # PSCustomObject 类型：Add-Member -Force 覆盖属性，PSObject.Properties 判存在后 Remove
-        if ($ContextWindowSize -lt 1000000) {
+        if ($ContextWindowSize -eq 200000) {
             $EnvObject | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_DISABLE_1M_CONTEXT' -Value "1" -Force
-            $EnvObject | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' -Value "$ContextWindowSize" -Force
+            if ($EnvObject.PSObject.Properties['CLAUDE_CODE_AUTO_COMPACT_WINDOW']) {
+                $EnvObject.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW')
+            }
         } else {
             if ($EnvObject.PSObject.Properties['CLAUDE_CODE_DISABLE_1M_CONTEXT']) {
                 $EnvObject.PSObject.Properties.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT')
@@ -225,7 +245,7 @@ function New-SettingsTemplate {
         [string]$opusModel,
         [string]$sonnetModel,
         [string]$haikuModel,
-        [string]$teammateModel = $null,
+        [string]$subagentModel = $null,
         [int]$contextWindowSize = 1000000
     )
 
@@ -274,7 +294,9 @@ function New-SettingsTemplate {
                 CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
                 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC = "1"
                 CLAUDE_CODE_ATTRIBUTION_HEADER = "0"
-                ENABLE_TOOL_SEARCH = "0"
+                ENABLE_TOOL_SEARCH = "false"
+                # 防止 refusal 时静默切换到官方模型（Claude Code ≥2.1.312 行为，网关用户建议开启）
+                CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK = "1"
                 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1"
             }
             permissions = @{
@@ -318,11 +340,19 @@ function New-SettingsTemplate {
         $template | Add-Member -MemberType NoteProperty -Name "env" -Value @{} -Force
     }
 
-    $template.env.ANTHROPIC_AUTH_TOKEN = $authToken
-    $template.env.ANTHROPIC_BASE_URL = $baseUrl
-    $template.env.ANTHROPIC_DEFAULT_OPUS_MODEL = $opusModel
-    $template.env.ANTHROPIC_DEFAULT_SONNET_MODEL = $sonnetModel
-    $template.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $haikuModel
+    if ($template.env -is [hashtable]) {
+        $template.env['ANTHROPIC_AUTH_TOKEN'] = $authToken
+        $template.env['ANTHROPIC_BASE_URL'] = $baseUrl
+        $template.env['ANTHROPIC_DEFAULT_OPUS_MODEL'] = $opusModel
+        $template.env['ANTHROPIC_DEFAULT_SONNET_MODEL'] = $sonnetModel
+        $template.env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = $haikuModel
+    } else {
+        $template.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_AUTH_TOKEN' -Value $authToken -Force
+        $template.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_BASE_URL' -Value $baseUrl -Force
+        $template.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_DEFAULT_OPUS_MODEL' -Value $opusModel -Force
+        $template.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_DEFAULT_SONNET_MODEL' -Value $sonnetModel -Force
+        $template.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_DEFAULT_HAIKU_MODEL' -Value $haikuModel -Force
+    }
 
     # 套餐标记：statusline 的 custom-command widget 读取此变量显示当前窗口的配置身份
     if ($template.env -is [hashtable]) {
@@ -334,20 +364,27 @@ function New-SettingsTemplate {
     # 上下文窗口设置（>=1M 时清除模板可能遗留的字段）
     Set-ContextWindowEnv -EnvObject $template.env -ContextWindowSize $contextWindowSize
 
-    # teammate 配置（[string] 参数会将 $null 转为空字符串，需显式还原为 $null）
-    $teammateModelValue = if ([string]::IsNullOrWhiteSpace($teammateModel)) { $null } else { $teammateModel }
-    if ($template -is [hashtable]) {
-        # hashtable 类型：Add-Member 只添加 note property，ConvertTo-Json 不会序列化
-        # 必须通过 key 赋值才能写入 JSON
-        $template["teammateDefaultModel"] = $teammateModelValue
-        $template["teammateMode"] = "auto"
-    } else {
-        # PSCustomObject 类型：Add-Member -Force 可正确覆盖属性
-        $template | Add-Member -MemberType NoteProperty -Name "teammateDefaultModel" -Value $teammateModelValue -Force
-        $template | Add-Member -MemberType NoteProperty -Name "teammateMode" -Value "auto" -Force
+    # 子代理模型手动定制通道（Claude Code ≥2.1.257 支持覆盖子代理模型）
+    # 值尾加 ! 表示严格生效，同时写入 CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
+    if (-not [string]::IsNullOrWhiteSpace($subagentModel)) {
+        $subForce = $subagentModel.EndsWith('!')
+        $subValue = if ($subForce) { $subagentModel.TrimEnd('!') } else { $subagentModel }
+        if ($template.env -is [hashtable]) {
+            $template.env['CLAUDE_CODE_SUBAGENT_MODEL'] = $subValue
+            if ($subForce) { $template.env['CLAUDE_CODE_SUBAGENT_MODEL_FORCE'] = "1" }
+        } else {
+            $template.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_SUBAGENT_MODEL' -Value $subValue -Force
+            if ($subForce) {
+                $template.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE' -Value "1" -Force
+            }
+        }
     }
 
-    $template.model = $modelId
+    if ($template -is [hashtable]) {
+        $template['model'] = $modelId
+    } else {
+        $template | Add-Member -MemberType NoteProperty -Name 'model' -Value $modelId -Force
+    }
 
     # 5. 写入文件
     try {
@@ -369,8 +406,8 @@ function Initialize-Config {
     Write-Host "提示: 在输入步骤按回车（空行）可取消，项目路径步骤空行跳过" -ForegroundColor DarkGray
     Write-Host ""
 
-    # 步骤 1/7: 配置模型基础信息
-    Write-Host "步骤 1/7: 配置模型基础信息" -ForegroundColor Cyan
+    # 步骤 1/6: 配置模型基础信息
+    Write-Host "步骤 1/6: 配置模型基础信息" -ForegroundColor Cyan
     Write-Host ""
 
     $modelId = Read-HostWithCancel "请输入模型 ID（如 glm-5.2[1m]）"
@@ -399,8 +436,8 @@ function Initialize-Config {
     Write-Host "配置文件名: $configFile" -ForegroundColor Gray
     Write-Host ""
 
-    # 步骤 2/7: 配置 API 参数
-    Write-Host "步骤 2/7: 配置 API 参数" -ForegroundColor Cyan
+    # 步骤 2/6: 配置 API 参数
+    Write-Host "步骤 2/6: 配置 API 参数" -ForegroundColor Cyan
     Write-Host ""
 
     $authToken = Read-HostWithCancel "请输入 ANTHROPIC_AUTH_TOKEN（API 密钥）"
@@ -424,20 +461,13 @@ function Initialize-Config {
     $sonnetModel = Read-HostWithCancel "请输入 ANTHROPIC_DEFAULT_SONNET_MODEL" -defaultValue $modelId
     if ([string]::IsNullOrWhiteSpace($sonnetModel)) { $sonnetModel = $modelId }
 
-    $haikuModel = Read-HostWithCancel "请输入 ANTHROPIC_DEFAULT_HAIKU_MODEL" -defaultValue $modelId
-    if ([string]::IsNullOrWhiteSpace($haikuModel)) { $haikuModel = $modelId }
-
-    # 步骤 3/7: Teammate 模型设置
-    Write-Host "步骤 3/7: Teammate 模型设置" -ForegroundColor Cyan
-    Write-Host ""
-
-    $teammateModel = Read-HostWithCancel "请输入 Teammate 默认模型（留空使用系统默认）"
-    if ([string]::IsNullOrWhiteSpace($teammateModel)) { $teammateModel = $null }
+    $haikuModel = Read-HostWithCancel "请输入 ANTHROPIC_DEFAULT_HAIKU_MODEL（此槽跑后台任务，建议 flash 级模型）" -defaultValue "glm-5.3-flash[1m]"
+    if ([string]::IsNullOrWhiteSpace($haikuModel)) { $haikuModel = "glm-5.3-flash[1m]" }
 
     Write-Host ""
 
-    # 步骤 4/7: 上下文窗口设置
-    Write-Host "步骤 4/7: 上下文窗口设置" -ForegroundColor Cyan
+    # 步骤 3/6: 上下文窗口设置
+    Write-Host "步骤 3/6: 上下文窗口设置" -ForegroundColor Cyan
     Write-Host ""
 
     $contextWindowSize = 0
@@ -462,13 +492,13 @@ function Initialize-Config {
 
     Write-Host ""
 
-    # 步骤 5/7: 默认权限
-    Write-Host "步骤 5/7: 默认权限" -ForegroundColor Cyan
+    # 步骤 4/6: 默认权限
+    Write-Host "步骤 4/6: 默认权限" -ForegroundColor Cyan
     Write-Host ""
 
     $defaultPermission = ""
     while ($defaultPermission -notin @("yes", "no")) {
-        $permInput = Read-Host "是否默认允许所有操作？(Y/n)"
+        $permInput = Read-Host "默认权限模式（Y = bypassPermissions 跳过 Permission 检查 / n = default 手动确认）(Y/n)"
         if ([string]::IsNullOrWhiteSpace($permInput) -or $permInput -eq "y" -or $permInput -eq "Y") {
             $defaultPermission = "yes"
         } elseif ($permInput -eq "n" -or $permInput -eq "N") {
@@ -479,8 +509,8 @@ function Initialize-Config {
     }
     Write-Host ""
 
-    # 步骤 6/7: 项目目录
-    Write-Host "步骤 6/7: 项目目录" -ForegroundColor Cyan
+    # 步骤 5/6: 项目目录
+    Write-Host "步骤 5/6: 项目目录" -ForegroundColor Cyan
     Write-Host ""
 
     $projectPath = Read-HostWithCancel "请输入项目目录路径（留空跳过）"
@@ -503,7 +533,6 @@ function Initialize-Config {
         Write-Host "  Opus 模型:    $opusModel" -ForegroundColor White
         Write-Host "  Sonnet 模型:  $sonnetModel" -ForegroundColor White
         Write-Host "  Haiku 模型:   $haikuModel" -ForegroundColor White
-        Write-Host "  Teammate 模型: $(if ($teammateModel) { $teammateModel } else { '系统默认' })" -ForegroundColor White
         Write-Host "  上下文窗口:   $contextWindowOriginal" -ForegroundColor White
         Write-Host ""
         Write-Host "  默认权限:     $(if ($defaultPermission -eq 'yes') { '允许所有操作' } else { '需要确认' })" -ForegroundColor White
@@ -554,8 +583,8 @@ function Initialize-Config {
         }
     }
 
-    # 步骤 7/7: 保存配置并生成模板
-    Write-Host "步骤 7/7: 保存配置" -ForegroundColor Cyan
+    # 步骤 6/6: 保存配置并生成模板
+    Write-Host "步骤 6/6: 保存配置" -ForegroundColor Cyan
     Write-Host ""
 
     # 保存配置文件
@@ -577,7 +606,7 @@ function Initialize-Config {
     $templateCreated = New-SettingsTemplate -modelId $modelId -configFile $configFile `
                                              -authToken $authToken -baseUrl $baseUrl `
                                              -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel `
-                                             -teammateModel $teammateModel -contextWindowSize $contextWindowSize
+                                             -contextWindowSize $contextWindowSize
 
     # 显示完成信息
     Clear-Host
@@ -594,8 +623,9 @@ function Initialize-Config {
     $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 }
 
-# 配置加载与验证循环（缺失字段可逐项修复）
-while ($true) {
+# Bootstrap：配置加载与验证（缺失字段可逐项修复）+ projects/usageCount 归一化；返回标准化后的配置
+function Bootstrap {
+    while ($true) {
     if (-not (Test-Path -LiteralPath $configPath)) {
         Initialize-Config
     }
@@ -829,7 +859,7 @@ while ($true) {
                 Write-Host "无效选择，请重新输入" -ForegroundColor Red
             }
         }
-        $config.defaultModel = $selected
+        $config | Add-Member -MemberType NoteProperty -Name "defaultModel" -Value $selected -Force
     }
 
     # 修复 defaultPermission
@@ -840,7 +870,7 @@ while ($true) {
         Write-Host ""
         $permValue = ""
         while ($permValue -notin @("yes", "no")) {
-            $permInput = Read-Host "是否默认允许所有操作？(Y/n)"
+            $permInput = Read-Host "默认权限模式（Y = bypassPermissions 跳过权限检查 / n = default 手动确认）(Y/n)"
             if ([string]::IsNullOrWhiteSpace($permInput) -or $permInput -eq "y" -or $permInput -eq "Y") {
                 $permValue = "yes"
             } elseif ($permInput -eq "n" -or $permInput -eq "N") {
@@ -849,37 +879,39 @@ while ($true) {
                 Write-Host "请输入 Y 或 n" -ForegroundColor Red
             }
         }
-        $config.defaultPermission = $permValue
+        $config | Add-Member -MemberType NoteProperty -Name "defaultPermission" -Value $permValue -Force
     }
 
     Save-Config $config
     continue
 }
 
-# 确保 projects 是数组
-if ($null -eq $config.projects) {
-    $config.projects = @()
-} elseif ($config.projects -isnot [array]) {
-    $config.projects = @($config.projects)
-}
-
-# 确保每个项目都有 usageCount
-for ($i = 0; $i -lt $config.projects.Count; $i++) {
-    $project = $config.projects[$i]
-
-    # 兼容旧格式（纯字符串路径）
-    if ($project -is [string]) {
-        $config.projects[$i] = @{
-            path = $project
-            usageCount = 0
-        }
-    } elseif ($null -eq $project.usageCount) {
-        $config.projects[$i] | Add-Member -MemberType NoteProperty -Name "usageCount" -Value 0 -Force
+    # 确保 projects 是数组
+    if ($null -eq $config.projects) {
+        $config.projects = @()
+    } elseif ($config.projects -isnot [array]) {
+        $config.projects = @($config.projects)
     }
-}
 
-# 保存初始化后的配置
-Save-Config $config
+    # 确保每个项目都有 usageCount
+    for ($i = 0; $i -lt $config.projects.Count; $i++) {
+        $project = $config.projects[$i]
+
+        # 兼容旧格式（纯字符串路径）
+        if ($project -is [string]) {
+            $config.projects[$i] = @{
+                path = $project
+                usageCount = 0
+            }
+        } elseif ($null -eq $project.usageCount) {
+            $config.projects[$i] | Add-Member -MemberType NoteProperty -Name "usageCount" -Value 0 -Force
+        }
+    }
+
+    # 保存初始化后的配置
+    Save-Config $config
+    return $config
+}
 
 # 更新模型使用次数
 function Update-ModelUsage {
@@ -919,10 +951,10 @@ function Update-ProjectUsage {
     }
 }
 
-# 获取按使用次数排序的模型列表
+# 获取按使用次数排序的模型列表（return ,@(...) 防止单元素被 PowerShell 解包，保证调用方始终拿到数组）
 function Get-SortedModels {
     $config = Get-Config
-    return @($config.models | Sort-Object -Property usageCount -Descending)
+    return ,@($config.models | Sort-Object -Property usageCount -Descending)
 }
 
 # 记录被清理的目录数量
@@ -953,7 +985,7 @@ function Get-SortedProjects {
     }
 
     $script:removedProjectsCount = $removedCount
-    return @($validProjects | Sort-Object -Property usageCount -Descending)
+    return ,@($validProjects | Sort-Object -Property usageCount -Descending)
 }
 
 # 显示带选择的菜单函数
@@ -1085,6 +1117,26 @@ function Show-ModelSelection {
     Write-Host "使用方向键导航，回车选择，ESC取消" -ForegroundColor Gray
 }
 
+# 权限模式定义（--permission-mode 合法取值，按菜单展示顺序；manual 为 default 的 CLI 别名，不单列）
+$script:PermissionModes = @(
+    @{ mode = "default";           label = "default           - 手动审查：每个权限逐一确认（Claude Code 默认）" },
+    @{ mode = "acceptEdits";       label = "acceptEdits       - 自动接受文件编辑及常见文件命令，其余仍需确认" },
+    @{ mode = "plan";              label = "plan              - 只读计划模式：研究与提案，不修改文件" },
+    @{ mode = "auto";              label = "auto              - 常规操作直接执行，分类器模型后台审查拦截高危动作" },
+    @{ mode = "bypassPermissions"; label = "bypassPermissions - 跳过所有权限检查（高危，建议仅限容器/VM）" },
+    @{ mode = "dontAsk";           label = "dontAsk           - 未预授权的操作直接拒绝，会话永不等待（适合 CI）" }
+)
+
+# defaultPermission（yes/no）向后兼容映射为菜单默认选中索引（yes→bypassPermissions、no/default→default）
+function ConvertTo-PermissionModeIndex {
+    param([string]$DefaultPermission)
+    $target = if ($DefaultPermission -eq "yes") { "bypassPermissions" } else { "default" }
+    for ($i = 0; $i -lt $script:PermissionModes.Count; $i++) {
+        if ($script:PermissionModes[$i].mode -eq $target) { return $i }
+    }
+    return 0
+}
+
 # 显示权限选择的函数
 function Show-PermissionSelection {
     param(
@@ -1100,19 +1152,15 @@ function Show-PermissionSelection {
     # 显示已选择状态
     Show-SelectionSummary -modelName $modelName -projectPath $projectPath
 
-    Write-Host "是否启用所有权限?" -ForegroundColor Yellow
+    Write-Host "选择权限模式:" -ForegroundColor Yellow
     Write-Host ""
 
-    $permissions = @(
-        "是 - 跳过所有权限检查 (推荐)",
-        "否 - 每个权限手动确认"
-    )
-
-    for ($i = 0; $i -lt $permissions.Count; $i++) {
+    for ($i = 0; $i -lt $script:PermissionModes.Count; $i++) {
+        $line = $script:PermissionModes[$i].label
         if ($i -eq $selectedIndex) {
-            Write-Host "  $($permissions[$i])" -ForegroundColor Green -BackgroundColor Black
+            Write-Host "  $($line)" -ForegroundColor Green -BackgroundColor Black
         } else {
-            Write-Host "  $($permissions[$i])" -ForegroundColor White
+            Write-Host "  $($line)" -ForegroundColor White
         }
     }
 
@@ -1137,7 +1185,8 @@ function Show-Help {
     Write-Host "  - 按使用次数智能排序" -ForegroundColor White
     Write-Host "  - 简单的项目目录管理" -ForegroundColor White
     Write-Host "  - 可视化目录状态指示器" -ForegroundColor White
-    Write-Host "  - Claude 权限控制" -ForegroundColor White
+    Write-Host "  - 权限模式六选一（default/acceptEdits/plan/auto/bypassPermissions/dontAsk）" -ForegroundColor White
+    Write-Host "  - 继续上次会话（主菜单一键续接上次启动）" -ForegroundColor White
     Write-Host "  - 自动配置保存/加载" -ForegroundColor White
     Write-Host ""
     Write-Host "配置文件位置:" -ForegroundColor Cyan
@@ -1267,17 +1316,23 @@ function Add-Model {
         $sonnetModel = $newModelId
     }
 
-    # 输入 HAIKU_MODEL（默认 = modelId）
-    $haikuModel = Read-HostWithCancel "输入 ANTHROPIC_DEFAULT_HAIKU_MODEL" -defaultValue $newModelId
+    # 输入 HAIKU_MODEL（此槽跑后台任务，建议 flash 级模型）
+    $haikuModel = Read-HostWithCancel "输入 ANTHROPIC_DEFAULT_HAIKU_MODEL（此槽跑后台任务，建议 flash 级模型）" -defaultValue "glm-5.3-flash[1m]"
     if ([string]::IsNullOrWhiteSpace($haikuModel)) {
-        $haikuModel = $newModelId
+        $haikuModel = "glm-5.3-flash[1m]"
     }
 
-    # 输入 TEAMMATE_MODEL（默认 = null，即使用系统默认）
-    $teammateModel = Read-HostWithCancel "输入 Teammate 默认模型（留空使用系统默认）"
-    if ([string]::IsNullOrWhiteSpace($teammateModel)) {
-        $teammateModel = $null
-    }
+    # 输入子代理模型（可选，留空使用系统默认；值尾加 ! 表示严格生效，写入 _FORCE=1）
+    $subagentModel = Read-HostWithCancel "输入子代理模型（留空使用系统默认，值尾加 ! 表示严格生效）"
+    if ([string]::IsNullOrWhiteSpace($subagentModel)) { $subagentModel = $null }
+
+    # 输入 effort（可选，留空跳过；启动时透传 --effort）
+    $newEffort = Read-HostWithCancel "输入 effort（留空跳过，如 high/max）"
+    if ([string]::IsNullOrWhiteSpace($newEffort)) { $newEffort = $null }
+
+    # 输入 fallbackModel（可选，留空跳过；启动时透传 --fallback-model 组成回退链）
+    $newFallbackModel = Read-HostWithCancel "输入 fallbackModel（留空跳过，模型不可用时自动回退）"
+    if ([string]::IsNullOrWhiteSpace($newFallbackModel)) { $newFallbackModel = $null }
 
     # 输入上下文窗口大小
     Write-Host ""
@@ -1314,7 +1369,7 @@ function Add-Model {
         $templateGenerated = New-SettingsTemplate -modelId $newModelId -configFile $newConfigFile `
                                                   -authToken $authToken -baseUrl $baseUrl `
                                                   -opusModel $opusModel -sonnetModel $sonnetModel -haikuModel $haikuModel `
-                                                  -teammateModel $teammateModel -contextWindowSize $contextWindowSize
+                                                  -subagentModel $subagentModel -contextWindowSize $contextWindowSize
     } else {
         # 配置文件已存在，需要更新上下文窗口 env
         try {
@@ -1325,9 +1380,20 @@ function Add-Model {
                 $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_PROFILE' -Value $newModelId -Force
             }
 
-            # 更新 teammate 配置（top-level 字段，不受 env 影响）
-            $settings | Add-Member -MemberType NoteProperty -Name "teammateDefaultModel" -Value $teammateModel -Force
-            $settings | Add-Member -MemberType NoteProperty -Name "teammateMode" -Value "auto" -Force
+            # 更新子代理模型定制（env 级字段；留空跳过）
+            if (-not [string]::IsNullOrWhiteSpace($subagentModel)) {
+                $subForce = $subagentModel.EndsWith('!')
+                $subValue = if ($subForce) { $subagentModel.TrimEnd('!') } else { $subagentModel }
+                if ($settings.env -is [hashtable]) {
+                    $settings.env['CLAUDE_CODE_SUBAGENT_MODEL'] = $subValue
+                    if ($subForce) { $settings.env['CLAUDE_CODE_SUBAGENT_MODEL_FORCE'] = "1" }
+                } else {
+                    $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_SUBAGENT_MODEL' -Value $subValue -Force
+                    if ($subForce) {
+                        $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE' -Value "1" -Force
+                    }
+                }
+            }
 
             $settingsJson = $settings | ConvertTo-Json -Depth 10 | Format-Json
             Set-Content -LiteralPath $fullConfigPath -Value $settingsJson -Encoding UTF8
@@ -1336,14 +1402,17 @@ function Add-Model {
         }
     }
 
-    # 添加模型到配置
-    $config.models += @{
+    # 添加模型到配置（effort/fallbackModel 仅在填写时写入）
+    $newModelEntry = @{
         id = $newModelId
         name = $newModelName
         configFile = $newConfigFile
         contextWindow = $contextWindowOriginal
         usageCount = 0
     }
+    if ($newEffort) { $newModelEntry.effort = $newEffort }
+    if ($newFallbackModel) { $newModelEntry.fallbackModel = $newFallbackModel }
+    $config.models += $newModelEntry
 
     Save-Config $config
 
@@ -1542,7 +1611,7 @@ function Edit-ModelConfig {
             while ($true) {
                 # 确保 env 存在
                 if (-not $settings.env) {
-                    $settings | Add-Member -MemberType NoteProperty -Name "env" -Value @{} -Force
+                    $settings | Add-Member -MemberType NoteProperty -Name "env" -Value (New-Object PSObject) -Force
                 }
 
                 # 获取当前值
@@ -1559,8 +1628,14 @@ function Edit-ModelConfig {
                 $currentOpus = if ($settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL) { $settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL } else { "" }
                 $currentSonnet = if ($settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL) { $settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL } else { "" }
                 $currentHaiku = if ($settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) { $settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL } else { "" }
-                $currentTeammate = if ($settings.teammateDefaultModel) { $settings.teammateDefaultModel } else { "系统默认" }
+                $currentSubagent = ""
+                if ($settings.env.CLAUDE_CODE_SUBAGENT_MODEL) {
+                    $currentSubagent = $settings.env.CLAUDE_CODE_SUBAGENT_MODEL
+                    if ($settings.env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE) { $currentSubagent += "（严格）" }
+                } else { $currentSubagent = "系统默认" }
                 $currentContext = if ($selectedModel.contextWindow) { $selectedModel.contextWindow } else { "1M" }
+                $currentEffort = if ($selectedModel.effort) { $selectedModel.effort } else { "（未设置）" }
+                $currentFallback = if ($selectedModel.fallbackModel) { $selectedModel.fallbackModel } else { "（未设置）" }
 
                 $fieldItems = @(
                     "API 密钥    : $currentToken",
@@ -1568,7 +1643,9 @@ function Edit-ModelConfig {
                     "Opus 模型   : $currentOpus",
                     "Sonnet 模型  : $currentSonnet",
                     "Haiku 模型   : $currentHaiku",
-                    "Teammate 模型: $currentTeammate",
+                    "子代理模型   : $currentSubagent",
+                    "effort      : $currentEffort",
+                    "fallback    : $currentFallback",
                     "上下文窗口   : $currentContext",
                     "返回"
                 )
@@ -1590,14 +1667,14 @@ function Edit-ModelConfig {
                 Write-Host ""
                 Write-Host "使用方向键导航，回车选择，ESC返回" -ForegroundColor Gray
 
-                $fieldSelectedIndex, $fieldSelected = Read-KeyInput -selectedIndex $fieldSelectedIndex -maxIndex 7
+                $fieldSelectedIndex, $fieldSelected = Read-KeyInput -selectedIndex $fieldSelectedIndex -maxIndex 9
 
                 if ($fieldSelected) {
                     if ($fieldSelectedIndex -eq -1) { # ESC - 返回第一级
                         break
                     }
 
-                    if ($fieldSelectedIndex -eq 7) { # 返回
+                    if ($fieldSelectedIndex -eq 9) { # 返回
                         break
                     }
 
@@ -1612,7 +1689,7 @@ function Edit-ModelConfig {
                             Write-Host ""
                             $newValue = Read-Host "输入新值（留空保持不变）"
                             if (-not [string]::IsNullOrWhiteSpace($newValue)) {
-                                $settings.env.ANTHROPIC_AUTH_TOKEN = $newValue
+                                $settings.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_AUTH_TOKEN' -Value $newValue -Force
                             }
                         }
                         1 { # Base URL
@@ -1620,7 +1697,7 @@ function Edit-ModelConfig {
                             Write-Host ""
                             $newValue = Read-Host "输入新值（留空保持不变）"
                             if (-not [string]::IsNullOrWhiteSpace($newValue)) {
-                                $settings.env.ANTHROPIC_BASE_URL = $newValue
+                                $settings.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_BASE_URL' -Value $newValue -Force
                             }
                         }
                         2 { # Opus 模型
@@ -1628,7 +1705,7 @@ function Edit-ModelConfig {
                             Write-Host ""
                             $newValue = Read-Host "输入新值（留空保持不变）"
                             if (-not [string]::IsNullOrWhiteSpace($newValue)) {
-                                $settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL = $newValue
+                                $settings.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_DEFAULT_OPUS_MODEL' -Value $newValue -Force
                             }
                         }
                         3 { # Sonnet 模型
@@ -1636,7 +1713,7 @@ function Edit-ModelConfig {
                             Write-Host ""
                             $newValue = Read-Host "输入新值（留空保持不变）"
                             if (-not [string]::IsNullOrWhiteSpace($newValue)) {
-                                $settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL = $newValue
+                                $settings.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_DEFAULT_SONNET_MODEL' -Value $newValue -Force
                             }
                         }
                         4 { # Haiku 模型
@@ -1644,22 +1721,100 @@ function Edit-ModelConfig {
                             Write-Host ""
                             $newValue = Read-Host "输入新值（留空保持不变）"
                             if (-not [string]::IsNullOrWhiteSpace($newValue)) {
-                                $settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $newValue
+                                $settings.env | Add-Member -MemberType NoteProperty -Name 'ANTHROPIC_DEFAULT_HAIKU_MODEL' -Value $newValue -Force
                             }
                         }
-                        5 { # Teammate 模型
-                            Write-Host "当前值: $currentTeammate" -ForegroundColor Cyan
+                        5 { # 子代理模型
+                            Write-Host "当前值: $currentSubagent" -ForegroundColor Cyan
                             Write-Host ""
-                            $newValue = Read-Host "输入新值（留空保持不变，输入 null 清除为系统默认）"
+                            $newValue = Read-Host "输入新值（留空保持不变，输入 null 清除为系统默认，值尾加 ! 表示严格生效）"
                             if (-not [string]::IsNullOrWhiteSpace($newValue)) {
                                 if ($newValue -eq "null") {
-                                    $settings | Add-Member -MemberType NoteProperty -Name "teammateDefaultModel" -Value $null -Force
+                                    if ($settings.env -is [hashtable]) {
+                                        $settings.env.Remove('CLAUDE_CODE_SUBAGENT_MODEL') | Out-Null
+                                        $settings.env.Remove('CLAUDE_CODE_SUBAGENT_MODEL_FORCE') | Out-Null
+                                    } else {
+                                        if ($settings.env.PSObject.Properties['CLAUDE_CODE_SUBAGENT_MODEL']) {
+                                            $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_SUBAGENT_MODEL')
+                                        }
+                                        if ($settings.env.PSObject.Properties['CLAUDE_CODE_SUBAGENT_MODEL_FORCE']) {
+                                            $settings.env.PSObject.Properties.Remove('CLAUDE_CODE_SUBAGENT_MODEL_FORCE')
+                                        }
+                                    }
                                 } else {
-                                    $settings | Add-Member -MemberType NoteProperty -Name "teammateDefaultModel" -Value $newValue -Force
+                                    $subForce = $newValue.EndsWith('!')
+                                    $subValue = if ($subForce) { $newValue.TrimEnd('!') } else { $newValue }
+                                    if ($settings.env -is [hashtable]) {
+                                        $settings.env['CLAUDE_CODE_SUBAGENT_MODEL'] = $subValue
+                                        if ($subForce) { $settings.env['CLAUDE_CODE_SUBAGENT_MODEL_FORCE'] = "1" }
+                                    } else {
+                                        $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_SUBAGENT_MODEL' -Value $subValue -Force
+                                        if ($subForce) {
+                                            $settings.env | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_SUBAGENT_MODEL_FORCE' -Value "1" -Force
+                                        }
+                                    }
                                 }
                             }
                         }
-                        6 { # 上下文窗口
+                        6 { # effort
+                            Write-Host "当前值: $currentEffort" -ForegroundColor Cyan
+                            Write-Host ""
+                            $newValue = Read-Host "输入新值（留空保持不变，输入 null 清除）"
+                            if (-not [string]::IsNullOrWhiteSpace($newValue)) {
+                                if ($newValue -eq "null") {
+                                    $config = Get-Config
+                                    for ($i = 0; $i -lt $config.models.Count; $i++) {
+                                        if ($config.models[$i].id -eq $modelId) {
+                                            if ($config.models[$i].PSObject.Properties['effort']) {
+                                                $config.models[$i].PSObject.Properties.Remove('effort')
+                                            }
+                                            break
+                                        }
+                                    }
+                                    Save-Config $config
+                                } else {
+                                    $config = Get-Config
+                                    for ($i = 0;  $i -lt $config.models.Count; $i++) {
+                                        if ($config.models[$i].id -eq $modelId) {
+                                            $config.models[$i] | Add-Member -MemberType NoteProperty -Name "effort" -Value $newValue -Force
+                                            break
+                                        }
+                                    }
+                                    Save-Config $config
+                                    $selectedModel | Add-Member -MemberType NoteProperty -Name "effort" -Value $newValue -Force
+                                }
+                            }
+                        }
+                        7 { # fallbackModel
+                            Write-Host "当前值: $currentFallback" -ForegroundColor Cyan
+                            Write-Host ""
+                            $newValue = Read-Host "输入新值（留空保持不变，输入 null 清除）"
+                            if (-not [string]::IsNullOrWhiteSpace($newValue)) {
+                                if ($newValue -eq "null") {
+                                    $config = Get-Config
+                                    for ($i = 0; $i -lt $config.models.Count; $i++) {
+                                        if ($config.models[$i].id -eq $modelId) {
+                                            if ($config.models[$i].PSObject.Properties['fallbackModel']) {
+                                                $config.models[$i].PSObject.Properties.Remove('fallbackModel')
+                                            }
+                                            break
+                                        }
+                                    }
+                                    Save-Config $config
+                                } else {
+                                    $config = Get-Config
+                                    for ($i = 0; $i -lt $config.models.Count; $i++) {
+                                        if ($config.models[$i].id -eq $modelId) {
+                                            $config.models[$i] | Add-Member -MemberType NoteProperty -Name "fallbackModel" -Value $newValue -Force
+                                            break
+                                        }
+                                    }
+                                    Save-Config $config
+                                    $selectedModel | Add-Member -MemberType NoteProperty -Name "fallbackModel" -Value $newValue -Force
+                                }
+                            }
+                        }
+                        8 { # 上下文窗口
                             Write-Host "当前值: $currentContext" -ForegroundColor Cyan
                             Write-Host ""
 
@@ -1883,7 +2038,7 @@ function Remove-ProjectDirectory {
 
 # 启动 Claude 的函数
 function Start-Claude {
-    param($projectPath, $noConfirm, $configFile)
+    param($projectPath, $permissionMode, $configFile, $modelId = $null, $modelName = $null, [switch]$Continue, [string[]]$ExtraArgs = @())
 
     # 检查项目目录是否存在
     if (-not (Test-Path -LiteralPath $projectPath -PathType Container)) {
@@ -1892,9 +2047,8 @@ function Start-Claude {
         return
     }
 
-    # 确定配置文件路径
-    $claudeConfigPath = "$env:USERPROFILE\.claude"
-    $fullConfigPath = Join-Path $claudeConfigPath $configFile
+    # 确定配置文件路径（使用 $CONFIG_DIR，尊重脚本顶部 $CUSTOM_CONFIG_DIR 自定义）
+    $fullConfigPath = Join-Path $CONFIG_DIR $configFile
 
     # 检查配置文件是否存在
     if (-not (Test-Path -LiteralPath $fullConfigPath)) {
@@ -1918,12 +2072,48 @@ function Start-Claude {
 
     if ($claudeCmd) {
         try {
-            # 使用本地安装的 Claude 命令启动（在当前窗口）
-            if ($noConfirm) {
-                & claude --settings "$fullConfigPath" --dangerously-skip-permissions
-            } else {
-                & claude --settings "$fullConfigPath"
+            # 透传 effort / fallbackModel（models[] 可选字段，留空不拼接）
+            $effort = $null; $fallbackModel = $null
+            if ($modelId) {
+                $effortConfig = Get-Config
+                foreach ($m in $effortConfig.models) {
+                    if ($m.id -eq $modelId) {
+                        $effort = $m.effort
+                        $fallbackModel = $m.fallbackModel
+                        break
+                    }
+                }
             }
+
+            # 记录本次启动参数（主菜单「继续上次会话」的数据源；预检全部通过后写入）
+            if ($modelId) {
+                $llConfig = Get-Config
+                if ($llConfig) {
+                    $ll = @{
+                        configFile = $configFile
+                        modelId = $modelId
+                        modelName = $modelName
+                        projectPath = $projectPath
+                        permissionMode = $permissionMode
+                        timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                    }
+                    $llConfig | Add-Member -MemberType NoteProperty -Name "lastLaunch" -Value $ll -Force
+                    Save-Config $llConfig
+                }
+            }
+
+            # 使用本地安装的 Claude 命令启动（在当前窗口），统一走 --permission-mode
+            # -Continue 时拼接 -c 续接最近会话
+            $claudeArgs = @("--settings", $fullConfigPath, "--permission-mode", $permissionMode)
+            if ($effort) { $claudeArgs += @("--effort", [string]$effort) }
+            if ($fallbackModel) { $claudeArgs += @("--fallback-model", [string]$fallbackModel) }
+            if ($Continue) { $claudeArgs += "-c" }
+            if ($ExtraArgs.Count -gt 0) { $claudeArgs += $ExtraArgs }
+            # 语句级直调（严禁携带管道，也严禁上游赋值/if 捕获本调用链）：claude 必须继承
+            # 控制台 stdout（TTY）。stdout 一旦变成管道（| Out-Host 或 $x = 捕获），claude
+            # 会判定非交互环境切入 --print 模式，无 prompt 时报 "Input must be provided..."
+            # 瞬间退出（2026-10-28 录屏复盘，详见 tests 回归用例）
+            & claude @claudeArgs
 
         } catch {
             Write-Host "启动 Claude 失败: $_" -ForegroundColor Red
@@ -1938,15 +2128,214 @@ function Start-Claude {
     }
 }
 
-# 主程序
-try {
+# CLI 参数直启：解析 -Model/-Project/-Permission，任一未提供时回退默认值；校验失败回退主菜单
+function Invoke-DirectLaunch {
+    # 启动结果经 $script:DirectLaunchLaunched 上报：本函数必须被语句级调用，
+    # 返回值会打到控制台（True/False），上游赋值捕获更会破坏 claude 的 TTY 继承
+    $script:DirectLaunchLaunched = $false
+    $config = Get-Config
+    $dl = $script:DirectLaunchArgs
+
+    # 解析模型：显式指定 → 校验存在；未提供 → defaultModel；均无效 → 回退主菜单
+    $modelEntry = $null
+    if ($dl.model) {
+        foreach ($m in $config.models) {
+            if ($m.id -eq $dl.model) { $modelEntry = $m; break }
+        }
+        if (-not $modelEntry) {
+            Write-Host "模型不存在: $($dl.model)" -ForegroundColor Red
+            Write-Host "可用模型: $(($config.models | ForEach-Object { $_.id }) -join ', ')"
+            return
+        }
+    } else {
+        foreach ($m in $config.models) {
+            if ($m.id -eq $config.defaultModel) { $modelEntry = $m; break }
+        }
+        if (-not $modelEntry) { $modelEntry = $config.models[0] }
+    }
+
+    # 解析项目目录：显式指定 → 校验存在；未提供 → 使用次数最高的有效项目
+    $projectPath = $null
+    if ($dl.project) {
+        if (Test-Path -LiteralPath $dl.project -PathType Container) {
+            $projectPath = $dl.project
+        } else {
+            Write-Host "项目目录不存在: $($dl.project)" -ForegroundColor Red
+            return
+        }
+    } else {
+        $sortedProjects = Get-SortedProjects
+        if ($sortedProjects.Count -gt 0) { $projectPath = $sortedProjects[0].path }
+    }
+
+    if (-not $projectPath) {
+        Write-Host "无可用项目目录（用主菜单「添加项目目录」或 -Project 指定）" -ForegroundColor Red
+        return
+    }
+
+    # 解析权限模式：显式合法 → 采用；显式非法 → 提示并回退映射默认；未提供 → 映射默认
+    $mode = $null
+    if ($dl.permission) {
+        foreach ($pm in $script:PermissionModes) {
+            if ($pm.mode -eq $dl.permission) { $mode = $pm.mode; break }
+        }
+        if (-not $mode) {
+            Write-Host "无效权限模式: $($dl.permission)（合法取值: $(($script:PermissionModes | ForEach-Object { $_.mode }) -join '/')）"
+            return
+        }
+    }
+    if (-not $mode) {
+        $mode = $script:PermissionModes[(ConvertTo-PermissionModeIndex -DefaultPermission $config.defaultPermission)].mode
+    }
+
+    # usage 计数 +1 并启动
+    Update-ModelUsage -modelId $modelEntry.id -delta 1
+    Update-ProjectUsage -projectPath $projectPath -delta 1
+    Write-Host "直启: $($modelEntry.id) @ $projectPath ($mode)"
+    Start-Claude -projectPath $projectPath -permissionMode $mode -configFile $modelEntry.configFile -modelId $modelEntry.id -modelName $modelEntry.name
+    $script:DirectLaunchLaunched = $true
+    return
+}
+
+      # Main：主菜单循环
+# settings 废弃键清单（新增废弃键时在此追加）
+$script:DeprecatedSettingsKeys = @(
+    @{ key = "teammateDefaultModel"; scope = "top"; reason = "Claude Code v2.1.234 已移除，残留无效果" },
+    @{ key = "teammateMode"; scope = "top"; reason = "Claude Code v2.1.234 已移除，残留无效果" }
+)
+
+# env 块废弃/非法取值清单
+$script:DeprecatedEnvValues = @(
+    @{ key = "ENABLE_TOOL_SEARCH"; bad = "0"; reason = "非官方取值（官方关闭值为 false）" }
+)
+
+# 环境体检：claude 版本比较、settings 废弃键扫描、登录状态检测
+function Invoke-EnvironmentCheck {
+    Clear-Host
+    Write-Host "=== 环境体检 ===" -ForegroundColor Green
+    Write-Host ""
+
+    # 1. claude 版本与最新版比较
+    $claudeCmd = Get-Command claude -ErrorAction SilentlyContinue
+    if ($claudeCmd) {
+        $vRaw = (& claude --version 2>$null) -join " "
+        $localVersion = $null
+        if ($vRaw -match '(\d+\.\d+\.\d+)') { $localVersion = $Matches[1] }
+        $shownV = if ($localVersion) { $localVersion } else { $vRaw }
+        Write-Host ("[版本] 本机 claude: " + $shownV) -ForegroundColor White
+        if ($localVersion) {
+            $job = Start-Job { & npm view @anthropic-ai/claude-code version 2>$null }
+            if (Wait-Job $job -Timeout 12) {
+                $latestRaw = (Receive-Job $job) -join ""
+                Remove-Job $job
+                if ($latestRaw -match '(\d+\.\d+\.\d+)') {
+                    $latest = $Matches[1]
+                    try { $isNewer = [version]$latest -gt [version]$localVersion } catch { $isNewer = $null }
+                    if ($isNewer) {
+                        Write-Host ("[版本] 最新版: $latest（可更新: npm install -g @anthropic-ai/claude-code@latest）") -ForegroundColor Yellow
+                    } else {
+                        Write-Host ("[版本] 最新版: $latest（已是最新）") -ForegroundColor Green
+                    }
+                } else {
+                    Write-Host "[版本] 无法获取最新版（npm 查询结果异常）" -ForegroundColor DarkGray
+                }
+            } else {
+                Stop-Job $job
+                Remove-Job $job -Force
+                Write-Host "[版本] 无法获取最新版（npm 查询超时）" -ForegroundColor DarkGray
+            }
+        }
+    } else {
+        Write-Host "[版本] 未找到 claude 命令" -ForegroundColor Red
+    }
+    Write-Host ""
+
+    # 2. settings-*.json 废弃键扫描
+    $scanCount = 0
+    $deprecatedHits = 0
+    $scanFiles = @(Get-ChildItem -Path $CONFIG_DIR -Filter "settings-*.json" -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*.example.json" })
+    foreach ($f in $scanFiles) {
+        $scanCount++
+        try {
+            $s = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        } catch {
+            Write-Host ("[废弃键] " + $f.Name + ": 无法解析（JSON 损坏，跳过）") -ForegroundColor Yellow
+            continue
+        }
+        foreach ($d in $script:DeprecatedSettingsKeys) {
+            if ($s.PSObject.Properties[$d.key]) {
+                $deprecatedHits++
+                Write-Host ("[废弃键] " + $f.Name + ": " + $d.key + " — " + $d.reason) -ForegroundColor Yellow
+            }
+        }
+        foreach ($d in $script:DeprecatedEnvValues) {
+            if ($s.env -and $s.env.PSObject.Properties[$d.key]) {
+                $val = [string]$s.env.($d.key)
+                if ($val -eq $d.bad) {
+                    $deprecatedHits++
+                    Write-Host ("[废弃值] " + $f.Name + ": env." + $d.key + "=" + $val + " — " + $d.reason) -ForegroundColor Yellow
+                }
+            }
+        }
+    }
+    if ($scanCount -eq 0) {
+        Write-Host "[废弃键] $CONFIG_DIR 下未找到 settings-*.json" -ForegroundColor DarkGray
+    } elseif ($deprecatedHits -eq 0) {
+        Write-Host ("[废弃键] " + $scanCount + " 个配置文件均无废弃键") -ForegroundColor Green
+    }
+    Write-Host ""
+
+    # 3. 登录状态（claude auth status；旧版无此子命令时降级为提示）
+    if ($claudeCmd) {
+        $authRaw = (& claude auth status 2>&1) -join " "
+        if ($LASTEXITCODE -eq 0 -and $authRaw) {
+            try { $auth = $authRaw | ConvertFrom-Json } catch { $auth = $null }
+            if ($auth -and $null -ne $auth.loggedIn) {
+                if ($auth.loggedIn) {
+                    Write-Host ("[登录] 已登录（" + $auth.authMethod + " / " + $auth.apiProvider + "）") -ForegroundColor Green
+                } else {
+                    Write-Host "[登录] 未登录" -ForegroundColor Yellow
+                }
+            } else {
+                Write-Host "[登录] claude auth status 输出无法解析" -ForegroundColor DarkGray
+            }
+        } else {
+            Write-Host "[登录] 当前 claude 版本不支持 auth status 子命令，无法检测" -ForegroundColor DarkGray
+        }
+    }
+    Write-Host ""
+
+    Write-Host "按任意键返回主菜单..." -ForegroundColor Yellow
+    $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+}
+# Main：主菜单循环
+function Main {
+    try {
     while ($true) {
-        $menuItems = @(
-            "使用 Claude",
+        # 动态构建主菜单：lastLaunch 有效时显示「继续上次会话」，失效时清除并提示
+        $menuItems = @("使用 Claude")
+        $continueIndex = -1
+        $invalidLastLaunch = $false
+        $config = Get-Config
+        if ($config.lastLaunch) {
+            $ll = $config.lastLaunch
+            $llSettingsFile = Join-Path $CONFIG_DIR $ll.configFile
+            if ($ll.configFile -and (Test-Path -LiteralPath $llSettingsFile) -and $ll.projectPath -and (Test-Path -LiteralPath $ll.projectPath -PathType Container)) {
+                $menuItems += "继续上次会话"
+                $continueIndex = 1
+            } else {
+                # 失效清除：提示并移除该字段
+                $config.PSObject.Properties.Remove('lastLaunch')
+                Save-Config $config
+                $invalidLastLaunch = $true
+            }
+        }
+        $menuItems += @(
             "添加模型",
             "修改配置",
             "移除模型",
             "添加项目目录",
+            "环境体检",
             "移除项目目录",
             "退出"
         )
@@ -1955,7 +2344,8 @@ try {
         $maxIndex = $menuItems.Count - 1
 
         while ($true) {
-            Show-MenuWithSelection -title "主菜单" -items $menuItems -selectedIndex $selectedIndex
+            $menuFooter = if ($invalidLastLaunch) { "上次会话启动参数已失效，已清除续接记录" } else { "" }
+            Show-MenuWithSelection -title "主菜单" -items $menuItems -selectedIndex $selectedIndex -footer $menuFooter
 
             $selectedIndex, $selected = Read-KeyInput -selectedIndex $selectedIndex -maxIndex $maxIndex
 
@@ -1968,9 +2358,9 @@ try {
                     continue
                 }
 
-                switch ($selectedIndex) {
-                    0 { # 使用 Claude
-                        $config = Get-Config
+                if ($selectedIndex -eq 0) {
+                    # 使用 Claude
+                    $config = Get-Config
 
                         if ($config.projects.Count -eq 0) {
                             Clear-Host
@@ -2002,6 +2392,10 @@ try {
                             if ($modelSelected) {
                                 if ($modelIndex -eq -1) { # ESC - 返回主菜单
                                     break modelLoop
+                                    if ($modelIndex -eq -2) { # H - 显示帮助后回到本页
+                                        Show-Help
+                                        continue modelLoop
+                                    }
                                 }
 
                                 # 获取选中的模型信息
@@ -2027,10 +2421,20 @@ try {
 
                                 :dirLoop while ($true) {
                                     Show-DirectorySelection -selectedIndex $dirIndex -modelName $modelName -sortedProjects $sortedProjects
+                                    if ($sortedProjects.Count -eq 0) {
+                                        # 全部目录失效被清理：等待按键后撤销模型计数，返回主菜单（防空数组击穿）
+                                        $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                                        if ($currentModelId) { Update-ModelUsage -modelId $currentModelId -delta -1 }
+                                        break modelLoop
+                                    }
 
                                     $dirIndex, $dirSelected = Read-KeyInput -selectedIndex $dirIndex -maxIndex $dirMax
 
                                     if ($dirSelected) {
+                                        if ($dirIndex -eq -2) { # H - 显示帮助后回到本页
+                                            Show-Help
+                                            continue dirLoop
+                                        }
                                         if ($dirIndex -eq -1) { # ESC - 返回模型选择
                                             # 减少模型使用次数
                                             if ($currentModelId) {
@@ -2059,10 +2463,10 @@ try {
                                         # 重新获取排序后的项目列表
                                         $sortedProjects = Get-SortedProjects
 
-                                        # 第三步：选择权限
+                                        # 第三步：选择权限模式
                                         $config = Get-Config
-                                        $permIndex = if ($config.defaultPermission -eq "no") { 1 } else { 0 }
-                                        $permMax = 1
+                                        $permIndex = ConvertTo-PermissionModeIndex -DefaultPermission $config.defaultPermission
+                                        $permMax = $script:PermissionModes.Count - 1
 
                                         :permLoop while ($true) {
                                             Show-PermissionSelection -selectedIndex $permIndex -modelName $modelName -projectPath $selectedProjectPath
@@ -2070,19 +2474,23 @@ try {
                                             $permIndex, $permSelected = Read-KeyInput -selectedIndex $permIndex -maxIndex $permMax
 
                                             if ($permSelected) {
+                                                if ($permIndex -eq -2) { # H - 显示帮助后回到本页
+                                                    Show-Help
+                                                    continue permLoop
+                                                }
                                                 if ($permIndex -eq -1) { # ESC - 返回项目选择
                                                     # 减少项目使用次数
                                                     if ($currentProjectPath) {
                                                         Update-ProjectUsage -projectPath $currentProjectPath -delta -1
                                                     }
-                                                    $permIndex = if ($config.defaultPermission -eq "no") { 1 } else { 0 }
+                                                    $permIndex = ConvertTo-PermissionModeIndex -DefaultPermission $config.defaultPermission
                                                     break permLoop
                                                 }
 
-                                                $noConfirm = ($permIndex -eq 0)
+                                                $selectedMode = $script:PermissionModes[$permIndex].mode
 
-                                                # 启动 Claude
-                                                Start-Claude -projectPath $selectedProjectPath -noConfirm $noConfirm -configFile $configFile
+                                                # 启动 Claude（记录 lastLaunch 供「继续上次会话」使用）
+                                                Start-Claude -projectPath $selectedProjectPath -permissionMode $selectedMode -configFile $configFile -modelId $modelId -modelName $modelName
 
                                                 # Claude 退出后返回主菜单
                                                 Clear-Host
@@ -2101,27 +2509,49 @@ try {
                         }
                         # 模型选择 ESC 后回到这里，继续主菜单
                     }
-                    1 { # 添加模型
-                        Add-Model
+                    elseif ($continueIndex -ge 0 -and $selectedIndex -eq $continueIndex) {
+                        # 继续上次会话：直接以 -c 续接，usage 计数同步 +1
+                        $config = Get-Config
+                        $ll = $config.lastLaunch
+                        if ($ll) {
+                            # 权限模式校验：失效回退到 defaultPermission 映射
+                            $llMode = $ll.permissionMode
+                            $modeValid = $false
+                            foreach ($pm in $script:PermissionModes) {
+                                if ($pm.mode -eq $llMode) { $modeValid = $true; break }
+                            }
+                            if (-not $modeValid) {
+                                $llMode = $script:PermissionModes[(ConvertTo-PermissionModeIndex -DefaultPermission $config.defaultPermission)].mode
+                            }
+
+                            # usage 计数 +1（模型或项目已不存在时为安全空操作）
+                            Update-ModelUsage -modelId $ll.modelId -delta 1
+                            Update-ProjectUsage -projectPath $ll.projectPath -delta 1
+
+                            Start-Claude -projectPath $ll.projectPath -permissionMode $llMode -configFile $ll.configFile -modelId $ll.modelId -modelName $ll.modelName -Continue
+
+                            Clear-Host
+                            Write-Host "Claude 已退出。" -ForegroundColor Yellow
+                            Write-Host ""
+                            Write-Host "按任意键返回主菜单..." -ForegroundColor Yellow
+                            $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+                        }
                     }
-                    2 { # 修改配置
-                        Edit-ModelConfig
+                    else {
+                        switch ($menuItems[$selectedIndex]) {
+                            "添加模型" { Add-Model }
+                            "修改配置" { Edit-ModelConfig }
+                            "移除模型" { Remove-Model }
+                            "添加项目目录" { Add-ProjectDirectory }
+                            "环境体检" { Invoke-EnvironmentCheck }
+                            "移除项目目录" { Remove-ProjectDirectory }
+                            "退出" {
+                                Clear-Host
+                                Write-Host "再见!" -ForegroundColor Green
+                                exit
+                            }
+                        }
                     }
-                    3 { # 移除模型
-                        Remove-Model
-                    }
-                    4 { # 添加项目目录
-                        Add-ProjectDirectory
-                    }
-                    5 { # 移除项目目录
-                        Remove-ProjectDirectory
-                    }
-                    6 { # 退出
-                        Clear-Host
-                        Write-Host "再见!" -ForegroundColor Green
-                        exit
-                    }
-                }
                 break
             }
         }
@@ -2132,4 +2562,19 @@ try {
     Write-Host ""
     Write-Host "按任意键退出..." -ForegroundColor Yellow
     $null = $host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    }
+}
+
+# dot-source 守卫：仅当脚本被直接运行时执行 Bootstrap + Main；
+# dot-source（. .\cboot.ps1）只加载函数与当前作用域常量，零输出零交互，可重复加载
+if ($MyInvocation.InvocationName -ne '.') {
+    Bootstrap | Out-Null
+    if ($script:DirectLaunchArgs) {
+        # 必须语句级调用（结果经 $script:DirectLaunchLaunched 上报）：赋值/if 条件捕获会把
+        # Start-Claude 内 & claude 的 stdout 重定向进管道，claude 检测到 stdout 非 TTY 后
+        # 切入 --print 模式，无 prompt 时报错瞬间退出
+        Invoke-DirectLaunch
+        if (-not $script:DirectLaunchLaunched) { Main }
+    }
+    else { Main }
 }

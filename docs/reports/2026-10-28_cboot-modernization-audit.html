@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cboot 项目时效性评估与改进建议（2026-10-28）</title>
+<style>
+  :root {
+    --ink:#1f2430; --muted:#5b6472; --line:#e3e6ec; --bg:#f2f3f6; --card:#ffffff;
+    --accent:#2456c4; --accent-soft:#eaf1fd;
+    --good:#0c7a5b; --good-bg:#e4f3ed;
+    --warn:#9a6700; --warn-bg:#fdf3d8;
+    --bad:#b3372f; --bad-bg:#fbe9e7;
+    --neutral-bg:#edeff3;
+  }
+  * { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.85 "Segoe UI","Microsoft YaHei","PingFang SC","Noto Sans SC",sans-serif; }
+  main { max-width:920px; margin:36px auto 64px; padding:52px 56px 48px;
+    background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  @media (max-width:640px){ main{ margin:0; border-radius:0; padding:32px 20px; } }
+  @media print { body{ background:#fff; } main{ border:none; margin:0; max-width:none; padding:0; } .no-print{ display:none; } }
+
+  .kicker { color:var(--accent); font-weight:700; font-size:13px; letter-spacing:.14em; text-transform:uppercase; margin:0 0 6px; }
+  h1 { font-size:30px; line-height:1.35; margin:0 0 10px; }
+  .meta { color:var(--muted); font-size:14px; margin:0 0 4px; }
+  .method { background:var(--accent-soft); border-radius:8px; padding:10px 16px; font-size:13.5px; color:#2c3e66; margin:18px 0 8px; }
+
+  nav.toc { border:1px solid var(--line); border-radius:8px; padding:12px 20px; margin:22px 0 8px; font-size:14px; background:#fbfcfe; }
+  nav.toc b { color:var(--muted); font-weight:600; margin-right:8px; }
+  nav.toc a { color:var(--accent); text-decoration:none; margin-right:14px; white-space:nowrap; }
+  nav.toc a:hover { text-decoration:underline; }
+
+  h2 { font-size:21px; margin:44px 0 14px; padding-bottom:8px; border-bottom:2px solid var(--line); }
+  h2 .no { color:var(--accent); margin-right:8px; }
+  h3 { font-size:16.5px; margin:26px 0 10px; }
+  p { margin:10px 0; }
+  ul, ol { padding-left:1.5em; }
+  li { margin:7px 0; }
+
+  table { width:100%; border-collapse:collapse; margin:14px 0; font-size:14.5px; }
+  th, td { border:1px solid var(--line); padding:8px 12px; text-align:left; vertical-align:top; }
+  th { background:#f6f8fb; font-weight:600; white-space:nowrap; }
+  tbody tr:nth-child(even){ background:#fafbfd; }
+
+  code { font-family:"Cascadia Code",Consolas,"Courier New",monospace; font-size:.88em;
+    background:var(--neutral-bg); border-radius:4px; padding:1px 6px; }
+  th code, td code { white-space:nowrap; }
+
+  .badge { display:inline-block; font-size:12px; font-weight:600; padding:1px 10px;
+    border-radius:999px; white-space:nowrap; vertical-align:1px; }
+  .b-ok   { background:var(--good-bg); color:var(--good); }
+  .b-warn { background:var(--warn-bg); color:var(--warn); }
+  .b-bad  { background:var(--bad-bg); color:var(--bad); }
+  .b-info { background:var(--accent-soft); color:var(--accent); }
+  .b-neutral { background:var(--neutral-bg); color:var(--muted); }
+
+  .callout { border-left:4px solid var(--accent); background:var(--accent-soft);
+    padding:10px 16px; border-radius:0 8px 8px 0; margin:16px 0; font-size:14.5px; }
+
+  .verdict { border:1px solid var(--line); border-left:4px solid var(--good);
+    border-radius:8px; padding:14px 18px; margin:14px 0; background:#fcfdfc; }
+  .verdict .claim { font-weight:600; margin:0 0 4px; }
+  .verdict .basis { color:var(--muted); font-size:13px; margin:0 0 8px; }
+  .verdict .fix { font-size:14px; margin:8px 0 0; }
+  .verdict .fix b { color:var(--good); }
+  details { margin-top:8px; font-size:13.5px; color:#3c4454; }
+  details summary { cursor:pointer; color:var(--accent); user-select:none; }
+  details .evi { background:#f6f8fb; border-radius:6px; padding:10px 14px; margin-top:8px; white-space:pre-wrap; word-break:break-word; }
+
+  footer { margin-top:48px; padding-top:16px; border-top:1px solid var(--line);
+    color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+
+  <header>
+    <p class="kicker">cboot · 现代化审计报告</p>
+    <h1>cboot 项目时效性评估与改进建议</h1>
+    <p class="meta">报告日期：2026-10-28 · 审计对象：cboot v1.0.11（commit fc7257f）· 基准：Claude Code v2.1.308（本机实测，官方最新 2.1.312）</p>
+    <p class="method">生成方式：多智能体审计工作流（19 个代理）—— 6 路并行调研（cboot 代码/配置审计 ×2 + Claude Code 官方能力/新特性/切换生态/GLM 官方配置调研 ×4）→ 4 视角差距分析 → 8 条关键事实主张对抗性核查（<b>8/8 confirmed</b>，核查途径含官方文档、官方 CHANGELOG 全文检索与本机 <code>claude --help</code> 实测）→ 综合报告。核查证据全文见<a href="#appendix">附录</a>。</p>
+  </header>
+
+  <nav class="toc">
+    <b>目录</b>
+    <a href="#s1">1 总体判断</a>
+    <a href="#s2">2 原生覆盖分析</a>
+    <a href="#s3">3 配置时效问题</a>
+    <a href="#s4">4 改进点清单</a>
+    <a href="#s5">5 如果只做三件事</a>
+    <a href="#appendix">附录 事实核查</a>
+  </nav>
+
+  <h2 id="s1"><span class="no">1</span>总体判断</h2>
+  <table>
+    <thead><tr><th style="width:120px">层面</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>核心价值层</b></td>
+        <td><span class="badge b-ok">不落伍</span> <code>claude --settings &lt;file&gt;</code> 仍是官方会话级覆盖入口（优先级仅次于 managed settings），Claude Code 至今无原生 profile/多配置切换机制，cboot 存续价值成立 <span class="badge b-ok">已对抗核查</span></td>
+      </tr>
+      <tr>
+        <td><b>配置时效层</b></td>
+        <td><span class="badge b-bad">已落后</span> <code>teammateDefaultModel</code> 被 v2.1.234 移除后 cboot 仍在 6 处写入；模板停留在 GLM-5.2/glm-4.5-air 世代，官方手动配置示例已推荐 glm-5.3[1m] / glm-5.3-flash[1m] <span class="badge b-ok">已对抗核查</span></td>
+      </tr>
+      <tr>
+        <td><b>工程形态层</b></td>
+        <td><span class="badge b-warn">形态合理、实践欠账</span> 单文件+双击零依赖分发仍是稀缺有效形态，但零 CI、零 Pester，v1.0.9 BOM 事故无自动化守护，版本号三处维护已实际漂移</td>
+      </tr>
+    </tbody>
+  </table>
+  <p><b>分层的含义：</b>不需要重构路线，需要一次「内容对齐 + 防回归守护」的集中维护。</p>
+
+  <h2 id="s2"><span class="no">2</span>已被原生覆盖或应收缩的部分</h2>
+  <ul>
+    <li><b>多供应商切换：未被覆盖，保留</b> <span class="badge b-ok">已核查</span><br>
+      <code>/model</code> 只能换模型别名并存默认值，不能改 <code>ANTHROPIC_BASE_URL</code>/<code>ANTHROPIC_AUTH_TOKEN</code>；本机 v2.1.308 无 <code>--profile</code>。注意 issue #44687 已于 2026-04-11 作为 #30031 的 duplicate 关闭，诉求由仍 open 的 #30031/#18435 承接——官方若实现原生切换，需重估本项目价值。</li>
+    <li><b>权限选择：部分重叠，应升级而非收缩</b> <span class="badge b-ok">已核查</span><br>
+      CLI 已有 <code>--permission-mode</code> 六模式（acceptEdits/auto/bypassPermissions/manual/dontAsk/plan，manual 为 default 别名），cboot 仅两态且硬编码 <code>--dangerously-skip-permissions</code>，用户接触不到 plan/acceptEdits/auto。auto/bypassPermissions 不能从 project/local settings 生效，启动器层 <code>--permission-mode</code> 恰是合法注入通道。</li>
+    <li><b>会话管理：不自研</b> <span class="badge b-ok">已核查</span><br>
+      原生 <code>--resume</code>/Ctrl+A picker 成熟；但官方文档明确 resume 不还原 <code>--settings</code>/<code>--mcp-config</code>/<code>--fallback-model</code> 等启动参数——裸终端续接会丢全部 env 打到错误供应商。因此「目录+套餐+续接」组合启动是 cboot 独有护城河，应做集成而非造轮子。</li>
+    <li><b>配置修复：与 claude doctor 对象不同，低重叠，保留</b> <span class="badge b-ok">已核查</span><br>
+      <code>claude config</code> 子命令已消失（被当 prompt），文档如有引用需清理。</li>
+    <li><b>teammateDefaultModel：应收缩删除</b> <span class="badge b-ok">已核查</span><br>
+      v2.1.234 移除，现行版本对残留值直接忽略；该键官方作用域本是 Global config（~/.claude.json），写进 settings-*.json 本就错位。</li>
+  </ul>
+
+  <h2 id="s3"><span class="no">3</span>配置时效问题清单</h2>
+  <ol>
+    <li><b>死键</b> <span class="badge b-ok">已核查</span> — <code>teammateDefaultModel</code> 在 cboot.ps1 L342/L346/L1329/L1562/L1656/L1658 共 6 处读写，5 个模板均带该字段，初始化向导仍占用一步采集无效值。</li>
+    <li><b>模板跨代</b> <span class="badge b-ok">已核查</span> — 5 个模板 <code>ANTHROPIC_DEFAULT_HAIKU_MODEL</code> 全为 glm-4.5-air（两代旧，且不在官方重定向名单，行为无官方背书）；官方声明 GLM-5.2/5.1 调用「自动切换」至 GLM-5.3、GLM-5-Turbo/4.7 切至 GLM-5.3-Flash——旧模板能跑但名不副实，CLAUDE_PROFILE 显示的也是旧身份。</li>
+    <li><b>模板与自身代码漂移</b> <span class="badge b-ok">已核查</span>（注意作用域）— 5 模板均无 <code>env.CLAUDE_PROFILE</code>、仅 glm-5.2[1m] 模板有 <code>CLAUDE_CODE_AUTO_COMPACT_WINDOW</code>、claude-config.example.json 的 models[] 无 contextWindow——代码运行时都会写，属「example 落后于代码产物」，手抄模板的用户会静默错过新能力，并非功能缺失。</li>
+    <li><b>DISABLE_1M_CONTEXT 语义矛盾</b> <span class="badge b-warn">未对抗核查</span> — Set-ContextWindowEnv 在窗口&lt;1M 时同时写 <code>CLAUDE_CODE_DISABLE_1M_CONTEXT=1</code> 与 <code>AUTO_COMPACT_WINDOW=500000</code>，对 1M 原生模型前者强制压回 200K，用户选「500K」的意图落空。</li>
+    <li><b>可疑枚举</b> <span class="badge b-warn">未对抗核查</span> — <code>ENABLE_TOOL_SEARCH="0"</code> 不在官方取值（unset/true/auto/auto:N/false）内，按字符串真值可能等效开启，与写 0 的意图相反。</li>
+    <li><b>Haiku 槽语义冲突</b> <span class="badge b-warn">部分核查</span> — Initialize-Config/Add-Model 默认把 Haiku 槽填成旗舰 ID，而官方定位该槽跑后台任务（<code>ANTHROPIC_SMALL_FAST_MODEL</code> 已 deprecated 由其取代），填旗舰会成倍消耗套餐额度。（模板事实「Haiku 槽均为 glm-4.5-air」已经核查证实，语义推断未单独核查）</li>
+  </ol>
+
+  <h2 id="s4"><span class="no">4</span>改进点清单（按价值/成本排序）</h2>
+  <table>
+    <thead><tr><th style="width:34px">#</th><th style="width:150px">改进</th><th>要点</th><th style="width:70px">effort</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>模板集中刷新</b></td><td>新增 glm-5.3[1m] 模板（OPUS/SONNET=glm-5.3[1m]、HAIKU=glm-5.3-flash[1m]、AUTO_COMPACT_WINDOW=1000000）；用 New-SettingsTemplate 真实输出重生成 example，保证「模板=代码产物」</td><td><span class="badge b-ok">小</span></td></tr>
+      <tr><td>2</td><td><b>清理死键</b></td><td>删 teammateDefaultModel 六处写入与向导步骤；需定制时改写 <code>env.CLAUDE_CODE_SUBAGENT_MODEL</code>（严格生效可加 <code>CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1</code>，≥2.1.257）</td><td><span class="badge b-ok">小</span></td></tr>
+      <tr><td>3</td><td><b>权限六模式</b></td><td>Show-PermissionSelection 扩枚举，Start-Claude 拼 <code>--permission-mode &lt;mode&gt;</code>；defaultPermission 旧 yes/no 向后兼容映射</td><td><span class="badge b-ok">小</span></td></tr>
+      <tr><td>4</td><td><b>CI 双守卫</b></td><td>windows-latest 校验含中文 .ps1 首三字节 EF BB BF + powershell.exe Parser::ParseFile 0 错误，防 v1.0.9 事故复发</td><td><span class="badge b-ok">小</span></td></tr>
+      <tr><td>5</td><td><b>会话续接组合</b></td><td>主菜单「继续上次会话」= 保存上次 (model,project,permission)，执行 <code>claude --settings X -c</code>；进阶支持 <code>--resume &lt;name&gt;</code></td><td><span class="badge b-warn">中</span></td></tr>
+      <tr><td>6</td><td><b>dot-source 守卫 + Pester</b></td><td>顶层流程包进 Main + 调用守卫，Pester 覆盖 Format-Json/Parse-ContextWindow/Set-ContextWindowEnv/Get-Save-Config roundtrip</td><td><span class="badge b-info">小→中</span></td></tr>
+      <tr><td>7</td><td><b>CLI 参数化</b></td><td>读取 <code>$args</code> 支持 -Model/-Project/-Permission 直启与 extraArgs 透传（<code>&amp; claude @args</code> 数组形式防引号问题）</td><td><span class="badge b-warn">中</span></td></tr>
+      <tr><td>8</td><td><b>effort/fallback 字段</b></td><td>models[] 加 effort 透传 <code>--effort</code>（GLM 官方有 /effort 映射表）、fallbackModel 链；网关用户可选 <code>CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK=1</code> 防 2.1.312 起的静默换模型</td><td><span class="badge b-warn">中</span></td></tr>
+      <tr><td>9</td><td><b>环境体检</b></td><td><code>claude auth status</code> JSON/退出码、版本比较、废弃键扫描</td><td><span class="badge b-ok">小</span></td></tr>
+      <tr><td>10</td><td><b>明确不做</b></td><td>fast-mode 预设（token+自定义 BASE_URL 被组织检查挡）、中途切换代理（ccr 领域）、用量面板（非启动器职责）；README 写清「中途换模型用 /model，permissions/hooks 热重载免重启」</td><td><span class="badge b-ok">小</span></td></tr>
+    </tbody>
+  </table>
+  <div class="callout"><b>文档级修正（已核查）：</b>settings 的 env 块会覆盖 shell 同名环境变量（官方表述 "in most sessions"），README 应注明；Haiku 槽提示文案应说明其后台任务语义。</div>
+
+  <h2 id="s5"><span class="no">5</span>如果只做三件事</h2>
+  <ol>
+    <li><b>一次集中配置刷新</b>（改进 1+2+3 合并执行）：模板全面切到 glm-5.3 系并保证 example 与代码产物一致，删除 teammateDefaultModel 并迁移到 <code>CLAUDE_CODE_SUBAGENT_MODEL</code>，权限菜单升级 <code>--permission-mode</code> 全枚举。全部小工作量，完成后配置面「落伍」清零。</li>
+    <li><b>CI 双守卫</b>（改进 4）：十余行 workflow，把 v1.0.9 那次真实伤害用户的 BOM 事故变成不可复发。</li>
+    <li><b>会话续接最小版</b>（改进 5 前半）：<code>claude --settings X -c</code> 一键组合，把「resume 不还原 --settings」这一官方边界转化为 cboot 的独有卖点——这是改全局配置的 cc-switch、走代理层的 ccr 都给不出的能力。</li>
+  </ol>
+  <p>剩余项（参数化、effort、体检、分发）按需排期；同时给 fast-mode/中途代理/用量面板立「明确不做」清单，并每季度复查前置条件（尤其官方是否落地原生 profile 切换）。</p>
+
+  <h2 id="appendix">附录 · 事实核查明细（8/8 confirmed）</h2>
+  <p class="meta">每条主张经独立核查代理以怀疑立场试图推翻；confirmed 需 ≥2 条独立来源或 1 次本机实测。「核查修正」为核查中发现的需精确化之处。</p>
+
+  <div class="verdict">
+    <p class="claim"><span class="badge b-ok">confirmed</span> ① Claude Code 无原生 profile/多配置切换机制；<code>--settings &lt;file-or-json&gt;</code> 是官方支持的会话级覆盖入口，优先级仅次于 managed settings</p>
+    <p class="basis">依据：本机 claude --help（v2.1.308）无 --profile flag；官方 settings 文档四层优先级 + 会话级覆盖；anthropics/claude-code issues #44687/#30031/#18435</p>
+    <p class="fix"><b>核查修正：</b>主张成立。issue #44687 已于 2026-04-11 关闭（duplicate of 仍 open 的 #30031）并锁定，应改述为「诉求由 open 的 #30031（CLI 多账号切换）与 #18435（Desktop 多 profile）承接」。另：官方文档记载 <code>CLAUDE_CONFIG_DIR</code> 可重定位整个配置目录，是社区公认的多配置隔离变通（cboot 即此类方案），但不是原生 profile 切换机制；--settings 属命令行层级，lists（如 permissions.allow）跨层级合并而非覆盖。</p>
+    <details><summary>展开完整核查证据</summary><div class="evi">(1) 本机实测：claude v2.1.308 的 --help 输出中 "profile" 出现 0 次，无 --profile flag；--settings &lt;file-or-json&gt; 存在（"Path to a settings JSON file or a JSON string to load additional settings"）。(2) 官方文档 code.claude.com/docs/en/settings「Settings precedence」节（2026-10-28 抓取）：优先级从高到低依次为 Managed settings &gt; Command line（--settings，"for that session only"）&gt; Project local &gt; Shared project &gt; User，并明文 "Nothing in your own settings files or --settings overrides a managed key"；文档中亦无任何 profile 机制。(3) 官方 changelog（最新版本 2.1.312，全量 9620 行检索）：从未新增 --profile 或任何 profile/多配置切换功能。(4) issue 实况：#30031 open（2026-03-02 开，标 duplicate）；#18435 open（2026-01-15 开）；#44687 已于 2026-04-11 被 bot 以 duplicate of #30031 关闭并于 2026-04-20 锁定。</div></details>
+  </div>
+
+  <div class="verdict">
+    <p class="claim"><span class="badge b-ok">confirmed</span> ② <code>/model</code> 只能切换模型名/别名并保存默认值，不能切换 <code>ANTHROPIC_BASE_URL</code> 或 <code>ANTHROPIC_AUTH_TOKEN</code>，无法实现跨供应商/中转站切换</p>
+    <p class="basis">依据：官方 model-config 文档对 /model 行为的描述；ANTHROPIC_BASE_URL/AUTH_TOKEN 仅能经环境变量或 settings env 块设置</p>
+    <p class="fix"><b>核查修正：</b>核心结论成立。精确化：(1) /model 除切模型/存默认值外，还能用左右键调 effort、按 <code>s</code> 仅对当前会话生效；(2)「无法跨供应商切换」仅对 /model 这一条命令成立——官方切换供应商的路径是重启前改 env、用 <code>claude --settings &lt;file&gt;</code> 载入不同 env 块、或 /login 切 Anthropic 账号；2.1.126+ 可用 <code>CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1</code> 让 /model 选择器列出已接入网关的模型（网关本身仍须预先经 BASE_URL 配置）。这正是 cboot 通过多份 settings 文件 + --settings 实现多模型切换的存在依据。</p>
+    <details><summary>展开完整核查证据</summary><div class="evi">1. 官方命令参考（code.claude.com/docs/en/commands.md）：「/model [model] | Switch the AI model and save it as your default for new sessions…」——仅切模型、存默认值、调 effort。2. 官方 model-config 文档：「ANTHROPIC_BASE_URL changes where requests are sent, not which model answers them.」/model 语法为 /model &lt;alias|name&gt;，仅接受模型名。3. 官方 env-vars 文档：ANTHROPIC_BASE_URL 与 ANTHROPIC_AUTH_TOKEN 均为启动时环境变量，无 slash command 运行时切换机制。4. CHANGELOG 全量历史（v0.x 至 2.1.312+，1.1MB 全文 grep）：/model 相关条目全部是模型选择/effort/选择器 UI 的修复增强，从未出现 /model 切换 BASE_URL/AUTH_TOKEN 的功能。5. 本机实测（claude 2.1.308，Windows）：claude -p "/model https://api.example-proxy.com" 返回「API error: 400 … model not changed」——CLI 把 URL 当作模型名发给 API 并被拒绝，证明 /model 参数只会被解释为模型标识符。</div></details>
+  </div>
+
+  <div class="verdict">
+    <p class="claim"><span class="badge b-ok">confirmed</span> ③ 本机 <code>claude --help</code> 实测：<code>--permission-mode</code> 取值为 acceptEdits/auto/bypassPermissions/manual/dontAsk/plan；<code>--effort</code>/<code>--fork-session</code>/<code>--worktree</code>/<code>--settings</code> 均存在，无 <code>--profile</code>/<code>--config</code> flag</p>
+    <p class="basis">依据：本次分析中直接运行 claude --help 抓取输出验证</p>
+    <p class="fix"><b>核查修正：</b>成立。<code>manual</code> 实为 <code>default</code> 模式的别名（v2.1.200+），官方文档明言两者均可作为 --permission-mode 取值；官方文档记载 <code>--effort</code>（v2.1.203+）在模型支持时还可接受 <code>ultracode</code> 档位（本机 help 未列出，可用档位取决于模型）。</p>
+    <details><summary>展开完整核查证据</summary><div class="evi">(1) 本机实测：claude --version = 2.1.308；--help 中 --permission-mode &lt;mode&gt; 明确列出 choices: "acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"；--effort &lt;level&gt;（low, medium, high, xhigh, max）、--fork-session、-w/--worktree [name]、--settings &lt;file-or-json&gt; 均存在；help 全文 grep "profile" 零命中；无独立 --config flag（claude config --help 回落打印顶层 help，说明也无 config 子命令）。(2) 官方文档 code.claude.com/docs/en/cli-reference：上述 flag 均有记载，且全文无 --profile 或 --config flag；并解释 manual 是 default 的别名（"claude --help lists it in place of default, and both values work"）。</div></details>
+  </div>
+
+  <div class="verdict">
+    <p class="claim"><span class="badge b-ok">confirmed</span> ④ Claude Code 2.1.234 起移除 settings 键 <code>teammateDefaultModel</code>，现行版本对残留值直接忽略</p>
+    <p class="basis">依据：官方 CHANGELOG 2.1.234 条目；cboot.ps1 多处仍在写入该键</p>
+    <p class="fix"><b>核查修正：</b>成立，两点精确化：(a) 该键官方归属是 Global config（~/.claude.json，由 /config 写入），cboot 将其写入 settings-*.json 本就与官方作用域不符，且现行版本忽略残留值——cboot.ps1 的 6 处写入（L342/L346/L1329/L1562/L1656/L1658）及 5 个模板字段现为无效配置，可安全移除。(b) 现行（v2.1.251 起）teammate 模型完整优先级：①spawn 提示词点名模型 → ②subagent definition 的 model 字段 → ③CLAUDE_CODE_SUBAGENT_MODEL（≠inherit 时）→ ④lead 当前模型兜底；<code>CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1</code>（≥v2.1.257）可强制 env 变量优先于①②。</p>
+    <details><summary>展开完整核查证据</summary><div class="evi">(1) 官方 CHANGELOG 2.1.234 条目原文："Removed the "Default teammate model" setting from /config; agent-team teammates now use the leader's model unless the spawn names one"。(2) 官方 settings-reference 索引行明确标注 teammateDefaultModel "Removed in v2.1.234"。(3) 官方 agent-teams 文档注明 "teammateDefaultModel was removed in v2.1.234; Claude Code ignores a leftover value"。(4) 本机实测：对本机安装的官方二进制 2.1.299/2.1.306/2.1.308 做字符串扫描，teammateDefaultModel 出现 0 次，而对照串 CLAUDE_CODE_SUBAGENT_MODEL=16 次、teammateMode=14 次均命中，证明键已从现行二进制彻底移除且扫描方法有效。(5) cboot 残留核实：cboot.ps1 6 处读写、5 个模板仍含 "teammateDefaultModel": null。CHANGELOG 2.1.147 另有 "Fixed CLAUDE_CODE_SUBAGENT_MODEL not applying to teammate processes spawned by agent teams"，佐证 env 变量适用于 teammate。</div></details>
+  </div>
+
+  <div class="verdict">
+    <p class="claim"><span class="badge b-ok">confirmed</span> ⑤ 智谱官方当前推荐映射为 OPUS/SONNET=glm-5.3[1m]、HAIKU=glm-5.3-flash[1m]；调用 GLM-5.2/5.1 自动切换至 GLM-5.3，GLM-5-Turbo/4.7 切换至 GLM-5.3-Flash</p>
+    <p class="basis">依据：docs.bigmodel.cn coding-plan/tool/claude.md 与 coding-plan/overview 页（2026-10 拉取）</p>
+    <p class="fix"><b>核查修正：</b>成立，两处细化：(1) 同一官方页面另写明不做手动 env 配置时平台侧默认三者均为 GLM-5.3-Flash；OPUS/SONNET=glm-5.3[1m]、HAIKU=glm-5.3-flash[1m] 是「手动配置示例」的推荐映射，并非唯一映射。(2) 官方原文用词是「自动切换」而非「重定向」，语义相同。glm-4.5-air 不在官方重定向列表中，其行为无官方文档背书。</p>
+    <details><summary>展开完整核查证据</summary><div class="evi">(1) docs.bigmodel.cn/cn/coding-plan/tool/claude.md「方式三：手动配置」env 示例：ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.3[1m]、ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.3[1m]、ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-5.3-flash[1m]。(2) docs.bigmodel.cn/cn/coding-plan/overview.md「可用模型」：「所有套餐均支持 GLM-5.3、GLM-5.3-Flash。调用历史模型 GLM-5.2、GLM-5.1 都将自动切换至 GLM-5.3，调用 GLM-5-Turbo、GLM-4.7 将自动切换至 GLM-5.3-Flash。」(3) 第三方交叉佐证：coding-plan/latest-model.md（标注更新于 2026-10-21）确认 GLM-5.3/GLM-5.3-Flash 为全量套餐当前模型、[1m] 后缀机制及同一 Base URL https://open.bigmodel.cn/api/anthropic。(4) 本机实测：本会话即经由 bigmodel Anthropic 兼容端点跑在 glm-5.3-flash[1m] 上，运行时验证该模型 ID 真实可用。附注：本机 settings-glm-5.2[1m].example.json 仍为旧映射（OPUS/SONNET=glm-5.2[1m]、HAIKU=glm-4.5-air）。</div></details>
+  </div>
+
+  <div class="verdict">
+    <p class="claim"><span class="badge b-ok">confirmed</span> ⑥ 恢复会话（<code>--resume</code>/<code>--continue</code>）不还原 <code>--settings</code> 等启动参数，需重新传入；标准 settings 文件则会重新读取</p>
+    <p class="basis">依据：官方 sessions 文档「恢复时不还原的启动参数」一节</p>
+    <p class="fix"><b>核查修正：</b>成立。补充：(1) 官方「不还原、需重新传入」完整清单为 --mcp-config、--settings、--plugin-dir、--fallback-model、--add-dir；(2) --model 与权限模式通常由会话状态还原，--system-prompt/--append-system-prompt 采用「首次请求时记录进会话」的特殊语义；(3) 实测发现 resume 时 --settings 传入坏端点会导致 CLI 长时间静默重试（&gt;11 分钟无输出）而非快速失败——排查启动配置问题时应先检查 resume 命令是否带错 --settings。</p>
+    <details><summary>展开完整核查证据</summary><div class="evi">来源1 官方文档 sessions.md（2026-10-28 抓取）："Not every configuration flag from the original launch is restored. If the session depended on --mcp-config, --settings, --plugin-dir, --fallback-model, or directories added with --add-dir, pass them again when you resume… The standard settings files, such as settings.json and settings.local.json, are re-read at launch." 来源2 CHANGELOG v2.0.64："Fixed --system-prompt being ignored when using --continue or --resume flags"，佐证启动参数不随 resume 还原是长期行为模式。来源3 本机实测（claude v2.1.308，headless -p 会话做确定性实验，以坏配置为可观测标记）：(a) 基线会话正常；(b) claude -p --resume &lt;id&gt; --settings &lt;坏 base URL&gt; 挂起 &gt;11 分钟（API 反复重试死地址）——重新传入的 --settings 在 resume 时确实生效；(c) 同会话不带该标志 resume 立即成功（9.3s）——该标志效果未持久化进会话；(d) 会话创建后才写入项目 .claude/settings.local.json（无效密钥）再 resume 即挂起，删除后立即恢复（13.6s）——标准 settings 文件在 resume 启动时从磁盘重新读取。</div></details>
+  </div>
+
+  <div class="verdict">
+    <p class="claim"><span class="badge b-ok">confirmed</span> ⑦ settings env 块与 shell 环境变量同名时，大多数会话中 settings 文件值生效（覆盖 shell 继承值）</p>
+    <p class="basis">依据：官方 env-vars 文档 Precedence 一节</p>
+    <p class="fix"><b>核查修正：</b>成立。"大多数会话"的例外值得在 README 列明：(a) Claude Desktop 或自托管环境 runner 启动会话时，launch environment 优先；(b) env 值来自共享项目 .claude/settings.json 或 settings.local.json 时，交互式会话需先信任工作区才生效；(c) managed settings 的 env 覆盖用户/项目文件的 env；(d) 部分变量项目/本地文件根本不能设置（CLAUDE_CONFIG_DIR、OTel 导出变量、HOME/TEMP 等，v2.1.282+ 会丢弃并告警）；(e) NO_COLOR/FORCE_COLOR 写在 env 块只影响子进程。注意与另一条规则区分：settings 顶层键（如 model）与成对 shell 变量（如 ANTHROPIC_MODEL）冲突时方向相反，是 shell 变量赢。</p>
+    <details><summary>展开完整核查证据</summary><div class="evi">(1) 官方 env-vars 文档 Precedence 节（2026-10-28 抓取）原文："When the same variable is set in both your shell and a settings file env block, the settings file value applies in most sessions. Claude Code writes each env entry into the process environment, replacing the value inherited from the shell."(2) settings-reference 的 env 条目："A value here overwrites the same variable exported in your shell"。(3) 本机实测：shell 导出 CB_CC_PREC_TEST=shell-wins，同时以 --settings 传入 {"env":{"CB_CC_PREC_TEST":"settings-wins"}}，嵌套 claude -p 会话的 Bash 子进程实际读到 settings-wins。(4) CHANGELOG 有对应条目 "Improved debug logs to name settings env variables ignored because the session's launch environment already sets them"，印证例外行为真实存在。</div></details>
+  </div>
+
+  <div class="verdict">
+    <p class="claim"><span class="badge b-ok">confirmed</span> ⑧ cboot 5 个 settings 模板均无 <code>env.CLAUDE_PROFILE</code>、Haiku 槽均为 glm-4.5-air；仅 glm-5.2[1m] 模板含 <code>CLAUDE_CODE_AUTO_COMPACT_WINDOW</code>；claude-config.example.json 的 models[] 无 contextWindow 字段</p>
+    <p class="basis">依据：对 D:/cboot/config 目录的 grep 实测</p>
+    <p class="fix"><b>核查修正：</b>属实，但需作用域限定：CLAUDE_PROFILE 与 contextWindow 缺失只成立于「模板/示例文件」层——cboot.ps1（v1.0.11）运行时会动态写入（New-SettingsTemplate L327-332 注入 CLAUDE_PROFILE；Add-Model L536/L1344、Edit-ModelConfig L1694 写入 contextWindow；Set-ContextWindowEnv L189-215 写入 AUTO_COMPACT_WINDOW 等）。正确的落后点是「example 落后于代码产物」：新用户照模板手工配置会静默错过这些能力；改进方向是让模板本身携带这些字段。</p>
+    <details><summary>展开完整核查证据</summary><div class="evi">本机实测（D:\cboot 工作区，git 状态干净即已提交的 v1.0.11 状态）：(1) 对 config/ 大小写不敏感 grep "profile" 零匹配，5 个模板均无 env.CLAUDE_PROFILE；(2) 5 个模板各恰好一处 ANTHROPIC_DEFAULT_HAIKU_MODEL，值全部为 "glm-4.5-air"；(3) CLAUDE_CODE_AUTO_COMPACT_WINDOW 仅出现在 settings-glm-5.2[1m].example.json L24（值 "1000000"），其余 4 个模板无；(4) claude-config.example.json（40 行）models[] 每项仅含 id/name/configFile/usageCount，全 config/ 目录 grep "contextWindow" 零匹配。</div></details>
+  </div>
+
+  <footer>
+    <p>本报告由 Claude Code 多智能体审计工作流生成（Run ID: wf_d36acd3e-951，19 agents / 281 次工具调用）。核查数据来源：code.claude.com/docs（settings / model-config / env-vars / sessions / cli-reference / settings-reference / commands）、anthropics/claude-code CHANGELOG 全文（至 v2.1.312）、docs.bigmodel.cn coding-plan 文档、本机 claude v2.1.308 实测（Windows 11）。「未对抗核查」标记的条目为分析视角的推断，采纳前建议单独验证。</p>
+  </footer>
+
+</main>
+</body>
+</html>

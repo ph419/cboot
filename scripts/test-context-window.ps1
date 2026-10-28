@@ -1,10 +1,10 @@
 ﻿<#
 .SYNOPSIS
-    Set-ContextWindowEnv 独立测试脚本（WP-010-3）
+    Set-ContextWindowEnv 独立测试脚本（WP-010-3；v1.0.12 起断言与新语义同步）
 
 .DESCRIPTION
     自包含测试：原样复制 cboot.ps1:188-218 的 Set-ContextWindowEnv 实现（方式 A），
-    覆盖 hashtable / PSCustomObject 双类型、<1M / >=1M 双分支、模板残留场景及端到端复现。
+    覆盖 hashtable / PSCustomObject 双类型、200K / 其余窗口双分支、模板残留场景及端到端复现。
 
     用法：
         pwsh scripts/test-context-window.ps1
@@ -22,20 +22,24 @@ function Set-ContextWindowEnv {
         [int]$ContextWindowSize
     )
 
+    # v1.0.12 语义：仅显式选 200K 时写 DISABLE_1M_CONTEXT 并清除 AUTO_COMPACT_WINDOW；
+    # 其余窗口只写 AUTO_COMPACT_WINDOW=size（与 cboot.ps1 同步，2026-10-28 验证记录见 docs/reports）
     if ($EnvObject -is [hashtable]) {
         # hashtable 类型：通过 key 索引赋值，Remove 移除
-        if ($ContextWindowSize -lt 1000000) {
+        if ($ContextWindowSize -eq 200000) {
             $EnvObject['CLAUDE_CODE_DISABLE_1M_CONTEXT'] = "1"
-            $EnvObject['CLAUDE_CODE_AUTO_COMPACT_WINDOW'] = "$ContextWindowSize"
+            $EnvObject.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW') | Out-Null
         } else {
             $EnvObject.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT') | Out-Null
             $EnvObject['CLAUDE_CODE_AUTO_COMPACT_WINDOW'] = "$ContextWindowSize"
         }
     } else {
         # PSCustomObject 类型：Add-Member -Force 覆盖属性，PSObject.Properties 判存在后 Remove
-        if ($ContextWindowSize -lt 1000000) {
+        if ($ContextWindowSize -eq 200000) {
             $EnvObject | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_DISABLE_1M_CONTEXT' -Value "1" -Force
-            $EnvObject | Add-Member -MemberType NoteProperty -Name 'CLAUDE_CODE_AUTO_COMPACT_WINDOW' -Value "$ContextWindowSize" -Force
+            if ($EnvObject.PSObject.Properties['CLAUDE_CODE_AUTO_COMPACT_WINDOW']) {
+                $EnvObject.PSObject.Properties.Remove('CLAUDE_CODE_AUTO_COMPACT_WINDOW')
+            }
         } else {
             if ($EnvObject.PSObject.Properties['CLAUDE_CODE_DISABLE_1M_CONTEXT']) {
                 $EnvObject.PSObject.Properties.Remove('CLAUDE_CODE_DISABLE_1M_CONTEXT')
@@ -99,7 +103,7 @@ Assert-True $ok1 `
     ('期望无DISABLE_1M_CONTEXT且AUTO_COMPACT_WINDOW=1000000，实际 DISABLE_1M_CONTEXT存在={0}, AUTO_COMPACT_WINDOW={1}' -f (Test-HasField -Obj $env1 -Field 'CLAUDE_CODE_DISABLE_1M_CONTEXT'), $compact1)
 
 # ============================================================
-# 用例 2：hashtable + 200K → DISABLE_1M_CONTEXT="1"、AUTO_COMPACT_WINDOW="200000"
+# 用例 2：hashtable + 200K → DISABLE_1M_CONTEXT="1"、AUTO_COMPACT_WINDOW 被清除（v1.0.12 语义）
 # ============================================================
 $env2 = @{ 'API_KEY' = 'k2' }
 Set-ContextWindowEnv -EnvObject $env2 -ContextWindowSize 200000
@@ -107,11 +111,10 @@ $disable2 = Get-FieldValue -Obj $env2 -Field 'CLAUDE_CODE_DISABLE_1M_CONTEXT'
 $compact2 = Get-FieldValue -Obj $env2 -Field 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'
 $ok2 = (Test-HasField -Obj $env2 -Field 'CLAUDE_CODE_DISABLE_1M_CONTEXT') -and
        ($disable2 -eq '1') -and
-       (Test-HasField -Obj $env2 -Field 'CLAUDE_CODE_AUTO_COMPACT_WINDOW') -and
-       ($compact2 -eq '200000')
+       (-not (Test-HasField -Obj $env2 -Field 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'))
 Assert-True $ok2 `
-    '用例2: hashtable+200K DISABLE_1M_CONTEXT=1, AUTO_COMPACT_WINDOW=200000' `
-    ('实际 DISABLE_1M_CONTEXT={0}, AUTO_COMPACT_WINDOW={1}' -f $disable2, $compact2)
+    '用例2: hashtable+200K DISABLE_1M_CONTEXT=1, AUTO_COMPACT_WINDOW 已清除' `
+    ('实际 DISABLE_1M_CONTEXT={0}, AUTO_COMPACT_WINDOW存在={1}' -f $disable2, (Test-HasField -Obj $env2 -Field 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'))
 
 # ============================================================
 # 用例 3（核心根因场景）：PSCustomObject + 1M（env 预含 200K 残留两字段）
@@ -152,19 +155,18 @@ Assert-True $ok4 `
     ('期望无DISABLE_1M_CONTEXT且AUTO_COMPACT_WINDOW=1000000，实际 DISABLE_1M_CONTEXT存在={0}, AUTO_COMPACT_WINDOW={1}' -f (Test-HasField -Obj $env4 -Field 'CLAUDE_CODE_DISABLE_1M_CONTEXT'), $compact4)
 
 # ============================================================
-# 用例 5：PSCustomObject + 500K → DISABLE_1M_CONTEXT="1"、AUTO_COMPACT_WINDOW="500000"
+# 用例 5：PSCustomObject + 500K → 无 DISABLE_1M_CONTEXT、AUTO_COMPACT_WINDOW="500000"（v1.0.12 语义）
 # ============================================================
 $env5 = [PSCustomObject]@{ 'API_KEY' = 'k5' }
 Set-ContextWindowEnv -EnvObject $env5 -ContextWindowSize 500000
 $disable5 = Get-FieldValue -Obj $env5 -Field 'CLAUDE_CODE_DISABLE_1M_CONTEXT'
 $compact5 = Get-FieldValue -Obj $env5 -Field 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'
-$ok5 = (Test-HasField -Obj $env5 -Field 'CLAUDE_CODE_DISABLE_1M_CONTEXT') -and
-       ($disable5 -eq '1') -and
+$ok5 = (-not (Test-HasField -Obj $env5 -Field 'CLAUDE_CODE_DISABLE_1M_CONTEXT')) -and
        (Test-HasField -Obj $env5 -Field 'CLAUDE_CODE_AUTO_COMPACT_WINDOW') -and
        ($compact5 -eq '500000')
 Assert-True $ok5 `
-    '用例5: PSCustomObject+500K DISABLE_1M_CONTEXT=1, AUTO_COMPACT_WINDOW=500000' `
-    ('实际 DISABLE_1M_CONTEXT={0}, AUTO_COMPACT_WINDOW={1}' -f $disable5, $compact5)
+    '用例5: PSCustomObject+500K 无DISABLE_1M_CONTEXT, AUTO_COMPACT_WINDOW=500000' `
+    ('实际 DISABLE_1M_CONTEXT存在={0}, AUTO_COMPACT_WINDOW={1}' -f (Test-HasField -Obj $env5 -Field 'CLAUDE_CODE_DISABLE_1M_CONTEXT'), $compact5)
 
 # ============================================================
 # 用例 6（端到端复现）：200K settings 模板 PSCustomObject（env 含两残留字段）

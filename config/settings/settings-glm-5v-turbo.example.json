@@ -1,33 +1,14 @@
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Agent|TeamCreate|TaskCreate|TaskUpdate",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "ccstatusline",
-            "async": true,
-            "timeout": 5000
-          }
-        ]
-      }
-    ]
-  },
-  "env": {
-    "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
-    "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
-    "API_TIMEOUT_MS": "3000000",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-4.5-air",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5v-turbo",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5v-turbo",
-    "ENABLE_TOOL_SEARCH": "0",
-    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
-  },
+﻿{
+  "model": "glm-5v-turbo",
+  "autoUpdatesChannel": "latest",
   "permissions": {
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf /)",
+      "Bash(dd if=*)",
+      "Bash(\u003e /dev/sda*)",
+      "Bash(mkfs *)"
+    ],
     "allow": [
       "Bash(ls *)",
       "Bash(ls)",
@@ -72,29 +53,50 @@
       "Bash(* --version)",
       "Bash(* -h)",
       "Bash(* -v)"
-    ],
-    "deny": [
-      "Bash(rm -rf /*)",
-      "Bash(rm -rf /)",
-      "Bash(dd if=*)",
-      "Bash(> /dev/sda*)",
-      "Bash(mkfs *)"
     ]
   },
   "enabledPlugins": {
     "document-skills@anthropic-agent-skills": true,
     "example-skills@anthropic-agent-skills": true
   },
-  "language": "中文",
-  "autoUpdatesChannel": "latest",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "async": true,
+            "command": "ccstatusline",
+            "timeout": 5000,
+            "type": "command"
+          }
+        ],
+        "matcher": "Agent|TeamCreate|TaskCreate|TaskUpdate"
+      }
+    ]
+  },
   "skipDangerousModePermissionPrompt": true,
-  "autoDreamEnabled": true,
-  "teammateDefaultModel": null,
-  "teammateMode": "auto",
-  "model": "glm-5v-turbo",
+  "language": "中文",
+  "env": {
+    "CLAUDE_PROFILE": "glm-5v-turbo",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5v-turbo",
+    "ENABLE_TOOL_SEARCH": "false",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5.3-flash[1m]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5v-turbo",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
+    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+    "ANTHROPIC_BASE_URL": "https://open.bigmodel.cn/api/anthropic",
+    "ANTHROPIC_AUTH_TOKEN": "YOUR_API_KEY_HERE",
+    "CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK": "1",
+    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
+  },
   "statusLine": {
-    "type": "command",
     "command": "ccstatusline",
-    "refreshInterval": 10
-  }
+    "refreshInterval": 10,
+    "type": "command"
+  },
+  "autoDreamEnabled": true
 }
+

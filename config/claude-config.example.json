@@ -4,24 +4,28 @@
             "id": "glm-5.1",
             "name": "GLM-5.1",
             "configFile": "settings-glm-5.1.json",
+            "contextWindow": "200K",
             "usageCount": 0
         },
         {
             "id": "glm5",
             "name": "GLM-5",
             "configFile": "settings-glm.json",
+            "contextWindow": "200K",
             "usageCount": 0
         },
         {
             "id": "glm-5-turbo",
             "name": "GLM-5-turbo",
             "configFile": "settings-glm-5-turbo.json",
+            "contextWindow": "200K",
             "usageCount": 0
         },
         {
             "id": "glm-5v-turbo",
             "name": "GLM-5v-turbo",
             "configFile": "settings-glm-5v-turbo.json",
+            "contextWindow": "200K",
             "usageCount": 0
         }
     ],

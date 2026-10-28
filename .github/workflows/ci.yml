@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  guard:
+    name: PS1 BOM + parse guards (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard 1 - all tracked .ps1 must be UTF-8 with BOM
+        shell: pwsh
+        run: |
+          $failures = @()
+          Get-ChildItem -Recurse -File | Where-Object { $_.Extension -eq '.ps1' } | ForEach-Object {
+            $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+              $failures += $_.FullName
+            }
+          }
+          if ($failures.Count -gt 0) { $failures | ForEach-Object { Write-Host "MISSING BOM: $_" }; exit 1 }
+          Write-Host "BOM guard OK"
+      - name: Guard 2a - PS 5.1 AST parse 0 errors
+        shell: powershell
+        run: |
+          $fail = $false
+          Get-ChildItem -Recurse -File | Where-Object Extension -eq '.ps1' | ForEach-Object {
+            $t=$null; $e=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$t, [ref]$e) | Out-Null
+            if ($e.Count -gt 0) { Write-Host ("PARSE FAIL: " + $_.FullName); $fail = $true }
+          }
+          if ($fail) { exit 1 }
+          Write-Host "PS 5.1 parse guard OK"
+      - name: Guard 2b - pwsh double-check
+        shell: pwsh
+        run: |
+          $fail = $false
+          Get-ChildItem -Recurse -File | Where-Object Extension -eq '.ps1' | ForEach-Object {
+            $t=$null; $e=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$t, [ref]$e) | Out-Null
+            if ($e.Count -gt 0) { Write-Host ("PARSE FAIL: " + $_.FullName); $fail = $true }
+          }
+          if ($fail) { exit 1 }
+          Write-Host "pwsh parse guard OK"
+
+  test:
+    name: Pester unit tests (pwsh)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Pester 5 tests
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          Import-Module Pester -MinimumVersion 5.0
+          $c = New-PesterConfiguration
+          $c.Run.Path = 'tests'
+          $c.Run.Throw = $true
+          $c.Output.Verbosity = 'Normal'
+          Invoke-Pester -Configuration $c

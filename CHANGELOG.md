@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.12] - 2026-10-28
+
+### Added
+
+- **权限六模式** — 权限选择由二态升级为 `--permission-mode` 六取值（default/acceptEdits/plan/auto/bypassPermissions/dontAsk，附中文说明），`Start-Claude` 移除 `--dangerously-skip-permissions` 硬编码分支统一走 `--permission-mode`；`defaultPermission` 字段保持 yes/no 存储不变，向后兼容映射为菜单默认选中项（yes→bypassPermissions、no→default）
+- **会话续接组合启动** — `claude-config.json` 新增可选 `lastLaunch` 字段，启动成功后记录参数；主菜单显示「继续上次会话」（`claude --settings <file> --permission-mode <mode> -c`），usage 计数同步 +1；`lastLaunch` 失效时提示并自动清除。官方文档确认 `--resume/--continue` 不还原 `--settings` 等启动参数，组合启动是启动器必要封装
+- **CLI 参数直启** — 支持 `cboot.ps1 -Model <id> -Project <path> -Permission <mode>` 跳过菜单直启（任一参数缺省回退默认值，校验失败回退主菜单）；`Start-Claude` 新增 `-ExtraArgs` 数组参数以 `& claude @extraArgs` 展开，`cboot.cmd` 的 `%*` 端到端透传
+- **effort 与 fallbackModel 透传** — `models[]` 新增可选 `effort`/`fallbackModel` 字段，启动时透传 `--effort`/`--fallback-model`；添加与编辑向导支持设置（留空跳过，编辑输入 null 清除）
+- **环境体检** — 主菜单新增入口：claude 版本与 npm 最新版比较、settings-*.json 废弃键扫描（废弃键清单首项 teammateDefaultModel）、`claude auth status` 登录状态检测（旧版无该子命令时降级提示）
+- **子代理模型手动定制通道** — 替代被 Claude Code v2.1.234 移除的 teammateDefaultModel：Add-Model/Edit-ModelConfig 新增「子代理模型」可选输入，写入 `env.CLAUDE_CODE_SUBAGENT_MODEL`（值尾加 `!` 同时写入 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` 严格生效，要求 Claude Code ≥2.1.257）
+- **新增 glm-5.3[1m] 模板** — `config/settings/settings-glm-5.3[1m].example.json`（OPUS/SONNET=glm-5.3[1m]、HAIKU=glm-5.3-flash[1m]、AUTO_COMPACT_WINDOW=1000000、CLAUDE_PROFILE=glm-5.3[1m]）
+- **CI 双守卫** — 新增 `.github/workflows/ci.yml`（windows-latest）：全部 .ps1 UTF-8 with BOM 扫描、PS 5.1 AST 解析 0 错误（pwsh 复跑双保险）、Pester 测试任务——将 v1.0.9 编码事故转化为不可复发
+- **Pester 单元测试** — `tests/cboot.Tests.ps1`（Pester 5.x，20 用例）：Format-Json、Parse-ContextWindow 边界、Set-ContextWindowEnv 各档位 env 组合、Get-Config/Save-Config roundtrip 与旧配置兼容、defaultPermission 六模式映射
+
+### Changed
+
+- **模板全面刷新（隔离环境重生成）** — 全部 example 与 `New-SettingsTemplate` 硬编码母版逐字段一致：env 补齐 `CLAUDE_PROFILE`、`CLAUDE_CODE_AUTO_COMPACT_WINDOW`、`CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK=1`（防 ≥2.1.312 静默换模型）；全部模板 HAIKU 槽统一 `glm-5.3-flash[1m]`（该槽跑后台任务，不跟随主模型世代），运行时 Haiku 槽默认值同步修复；`claude-config.example.json` 补齐 `models[].contextWindow`
+- **封装 Main 入口 + dot-source 守卫** — 顶层交互代码封装为 `Bootstrap`/`Main` 函数，脚本末尾守卫仅直跑时执行；dot-source 零输出零交互可重复加载，为 Pester 铺路；`Start-Claude` 配置路径改用 `$CONFIG_DIR`（尊重自定义配置目录）
+- **README 补全** — 新章节：权限模式、会话续接、CLI 参数直启、settings env 与 shell 环境变量优先级（含 Desktop/launch environment、managed settings、禁设清单例外）、明确不做清单（fast-mode 预设/中途切换代理/用量面板）、维护性（每季度复查 issue #30031/#18435）、运行测试；移除已废弃的 teammateDefaultModel 功能描述
+
+### Fixed
+
+- **claude 启动瞬退（--print 模式误入）** — `Start-Claude` 中 `& claude @claudeArgs | Out-Host` 把 stdout 变成管道，claude 检测 stdout 非 TTY 后自动切入 `--print` 非交互模式，无 prompt 时报 `Error: Input must be provided either through stdin or as a prompt argument when using --print` 瞬间退出（录屏 + 管道阴性对照复现实证），表现为选完权限模式回车后「Claude 已退出」。修复：移除管道恢复语句级直调 `& claude @claudeArgs`（继承控制台 TTY，与 v1.0.11 行为一致）；同根问题 `cboot.cmd -Model/-Project/-Permission` 直启路径的 `$launched = Invoke-DirectLaunch` 赋值捕获一并消除（改语句级调用，结果经 `$script:DirectLaunchLaunched` 上报）；`tests/cboot.Tests.ps1` 新增 3 个源码断言回归用例（AST 0 错误 / claude 直调行无管道 / 直启无赋值捕获）防止复发
+- **上下文窗口 env 语义修复（验证驱动）** — 实测确认 `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` 会把 1M 原生模型压回 200K，且官方对压缩阈值有 min(阈值, 有效窗口) 钳制、无溢出风险；`Set-ContextWindowEnv` 改为仅显式选 200K 时写 `DISABLE_1M_CONTEXT` 并清除 `AUTO_COMPACT_WINDOW`，其余窗口只写 `AUTO_COMPACT_WINDOW`，消除「窗口 200K + 压缩阈值 500K」的矛盾组合
+- **ENABLE_TOOL_SEARCH 取值规范** — `"0"` 非官方取值（二进制解析 falsy 集合为 0/false/no/off，与意图一致但非文档化），统一改为 `"false"`
+
+### Removed
+
+- **teammateDefaultModel / teammateMode 死键清理** — cboot.ps1 全部 11 处 teammate 代码删除（向导步骤 7 步重排为 6 步），5 个 settings 模板中的 teammate 字段删除；Initialize-Config/Add-Model Haiku 槽默认值由旗舰模型改为 `glm-5.3-flash[1m]`
+
 ## [1.0.11] - 2026-08-29
 
 ### Added
