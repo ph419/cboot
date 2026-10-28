@@ -51,11 +51,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Run Pester 5 tests
+      - name: Run Pester tests
         shell: pwsh
         run: |
-          Install-Module Pester -MinimumVersion 5.0 -Force -Scope CurrentUser -SkipPublisherCheck
-          Import-Module Pester -MinimumVersion 5.0
+          # 钉住版本：浮动会随 PSGallery latest 静默漂移（Pester 5→6 曾无声切换），新版语义变动会导致仓库零改动 CI 即挂
+          Install-Module Pester -RequiredVersion 6.2.0 -Force -Scope CurrentUser -SkipPublisherCheck
+          Import-Module Pester -RequiredVersion 6.2.0
           $c = New-PesterConfiguration
           $c.Run.Path = 'tests'
           $c.Run.Throw = $true

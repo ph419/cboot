@@ -5,10 +5,17 @@
 BeforeAll {
     $script:RepoRoot = Split-Path $PSScriptRoot -Parent
     # 隔离：USERPROFILE 重定向到临时目录后再 dot-source（dot-source 守卫保证零副作用）
+    # 顺序约束：重定向必须严格先于 dot-source —— cboot.ps1 顶部在加载时把 $env:USERPROFILE 烤进 $configPath
+    $script:OrigUserProfile = $env:USERPROFILE
     $script:TestHome = Join-Path $TestDrive 'home'
     New-Item -ItemType Directory -Path (Join-Path $script:TestHome '.claude') -Force | Out-Null
     $env:USERPROFILE = $script:TestHome
     . (Join-Path $script:RepoRoot 'cboot.ps1')
+}
+
+AfterAll {
+    # 恢复进程级 USERPROFILE，避免交互式会话跑完测试后子进程继承指向已删除临时目录的污染
+    $env:USERPROFILE = $script:OrigUserProfile
 }
 
 Describe 'Format-Json' {
@@ -97,11 +104,14 @@ Describe 'Set-ContextWindowEnv' {
 
 Describe 'Get-Config / Save-Config' {
     It 'roundtrip 保留字段' {
+        # 项目路径用 $TestDrive 拼接的占位字符串（本测试仅做 JSON 往返、不触盘）。
+        # 不得硬编码盘符路径 —— Get-SortedProjects 会清理不存在的目录，见"测试卫生守卫"用例。
+        $projPath = Join-Path $TestDrive 'roundtrip-proj'
         $cfg = @{
             models = @(@{ id = 'm1'; name = 'Model 1'; configFile = 'settings-m1.json'; contextWindow = '1M'; usageCount = 3 })
             defaultModel = 'm1'
             defaultPermission = 'yes'
-            projects = @(@{ path = 'D:\proj'; usageCount = 1 })
+            projects = @(@{ path = $projPath; usageCount = 1 })
         }
         Save-Config $cfg
         $r = Get-Config
@@ -110,7 +120,7 @@ Describe 'Get-Config / Save-Config' {
         $r.models[0].usageCount | Should -Be 3
         $r.defaultModel | Should -Be 'm1'
         $r.defaultPermission | Should -Be 'yes'
-        $r.projects[0].path | Should -Be 'D:\proj'
+        $r.projects[0].path | Should -Be $projPath
     }
     It '旧配置缺字段时 Get-Config 可读且缺字段为 null' {
         $configPath2 = $configPath
@@ -142,11 +152,15 @@ Describe 'ConvertTo-PermissionModeIndex' {
 
 Describe 'Get-SortedModels / Get-SortedProjects 单元素不解包' {
     It '单模型时仍返回数组（Count=1 而非键数）' {
+        # Get-SortedProjects 会清理磁盘上不存在的目录，项目路径必须是真实存在的目录
+        # （2026-10-28 CI 事故：硬编码 D:\cboot 在 runner 上不存在被自动清理，返回空数组）
+        $projDir = Join-Path $TestDrive 'proj'
+        New-Item -ItemType Directory -Path $projDir -Force | Out-Null
         $cfg = @{
             models = @(@{ id = 'only'; name = 'Only'; configFile = 'settings-only.json'; usageCount = 0 })
             defaultModel = 'only'
             defaultPermission = 'no'
-            projects = @(@{ path = 'D:\cboot'; usageCount = 0 })
+            projects = @(@{ path = $projDir; usageCount = 0 })
         }
         Save-Config $cfg
         $m = Get-SortedModels
@@ -156,7 +170,55 @@ Describe 'Get-SortedModels / Get-SortedProjects 单元素不解包' {
         $p2 = Get-SortedProjects
         ($p2 -is [System.Array]) | Should -Be $true
         $p2.Count | Should -Be 1
-        $p2[0].path | Should -Be 'D:\cboot'
+        $p2[0].path | Should -Be $projDir
+    }
+    It '无效目录被清理并写回配置（removedCount>0 分支）' {
+        # 覆盖 cboot.ps1 Get-SortedProjects 清理写回分支：一个存在 + 一个不存在
+        $keepDir = Join-Path $TestDrive 'proj-keep'
+        New-Item -ItemType Directory -Path $keepDir -Force | Out-Null
+        $cfg = @{
+            models = @(@{ id = 'm'; name = 'M'; configFile = 's.json'; usageCount = 0 })
+            defaultModel = 'm'
+            defaultPermission = 'no'
+            projects = @(
+                @{ path = $keepDir; usageCount = 2 }
+                @{ path = (Join-Path $TestDrive 'proj-gone'); usageCount = 5 }  # 从不创建，必然不存在
+            )
+        }
+        Save-Config $cfg
+        $p = Get-SortedProjects
+        ($p -is [System.Array]) | Should -Be $true
+        $p.Count | Should -Be 1
+        $p[0].path | Should -Be $keepDir
+        # 清理写回：磁盘配置只剩有效条目
+        $r = Get-Config
+        $r.projects.Count | Should -Be 1
+        $r.projects[0].path | Should -Be $keepDir
+        $script:removedProjectsCount | Should -Be 1
+    }
+    It '缺 path 的畸形条目按无效目录清理（PS5.1/PS7 行为统一）' {
+        # cboot.ps1 曾对缺 path 条目直接 Test-Path -LiteralPath $null：PS7 终止单条语句
+        # 静默改写磁盘配置、PS5.1 终止迭代体静默吞条目，行为分歧。现显式 IsNullOrEmpty 防御。
+        $validDir = Join-Path $TestDrive 'proj-valid'
+        New-Item -ItemType Directory -Path $validDir -Force | Out-Null
+        $cfg = @{
+            models = @(@{ id = 'm'; name = 'M'; configFile = 's.json'; usageCount = 0 })
+            defaultModel = 'm'
+            defaultPermission = 'no'
+            projects = @(
+                @{ path = $validDir; usageCount = 1 }
+                @{ usageCount = 9 }   # 畸形条目：缺 path 字段
+            )
+        }
+        Save-Config $cfg
+        $p = Get-SortedProjects
+        ($p -is [System.Array]) | Should -Be $true
+        $p.Count | Should -Be 1
+        $p[0].path | Should -Be $validDir
+        # 畸形条目已从磁盘配置清理
+        $r = Get-Config
+        $r.projects.Count | Should -Be 1
+        $script:removedProjectsCount | Should -Be 1
     }
 }
 
@@ -207,5 +269,25 @@ Describe 'Start-Claude TTY 继承回归（claude --print 瞬退）' {
     It 'Invoke-DirectLaunch 为语句级调用（无赋值捕获）' {
         $captured = $script:Src -split "`r?`n" | Where-Object { $_ -match '=\s*Invoke-DirectLaunch\b' }
         $captured | Should -BeNullOrEmpty -Because '赋值捕获会把 Start-Claude 内 & claude 的 stdout 重定向进管道，同样触发 --print 瞬退'
+    }
+}
+
+Describe '测试卫生守卫' {
+    # 2026-10-28 事故：测试硬编码盘符路径在本机恰好存在、CI runner 上不存在，
+    # 被 Get-SortedProjects 的无效目录清理逻辑清除后返回空数组，本地绿 CI 红。
+    # 本守卫用 AST 扫描 tests/*.Tests.ps1 的字符串字面量（注释与变量自动豁免），
+    # 测试所需路径一律通过 $TestDrive / Join-Path 构造。
+    It '测试代码不含硬编码盘符路径（防本地绿 CI 红）' {
+        $violations = foreach ($file in (Get-ChildItem -Path $PSScriptRoot -Filter '*.Tests.ps1' -File)) {
+            $t = $null; $e = $null
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$t, [ref]$e)
+            $ast.FindAll(
+                { param($a) $a -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $a.Value -match '^[A-Za-z]:\\' },
+                $true
+            ) | ForEach-Object {
+                [pscustomobject]@{ File = $file.Name; Line = $_.Extent.StartLineNumber; Value = $_.Value }
+            }
+        }
+        $violations | Should -BeNullOrEmpty -Because '硬编码盘符路径是环境依赖地雷：本机存在而 CI runner 上不存在时必挂；测试路径一律用 $TestDrive 构造'
     }
 }

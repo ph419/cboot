@@ -968,6 +968,12 @@ function Get-SortedProjects {
 
     foreach ($p in $config.projects) {
         $path = if ($p -is [string]) { $p } else { $p.path }
+        # 缺/空 path 的畸形条目显式按无效目录清理：直接 Test-Path -LiteralPath $null 时
+        # PS7 终止单条语句静默改写配置、PS5.1 终止迭代体静默吞条目，两运行时行为分歧
+        if ([string]::IsNullOrEmpty($path)) {
+            $removedCount++
+            continue
+        }
         if (Test-Path -LiteralPath $path -PathType Container) {
             if ($p -is [string]) {
                 $validProjects += @{ path = $p; usageCount = 0 }
